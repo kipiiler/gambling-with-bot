@@ -247,8 +247,27 @@ class OpenRouterPromptProcessor:
             with open(error_log_path, 'a', encoding='utf-8') as f:
                 f.write(f"[{timestamp}] {error_message}\n")
         
+        def cleanup_containers(test_client_container_name=None, server_container_name=None, port=None):
+            """Helper function to clean up containers and release port"""
+            print("🧹 Cleaning up containers...")
+            if test_client_container_name:
+                self.docker_service.stop_and_remove_container(test_client_container_name)
+            if server_container_name:
+                self.docker_service.stop_and_remove_container(server_container_name)
+            if port:
+                self.docker_service.release_port(port)
+        
+        # Initialize variables for cleanup
+        test_client_container_name = None
+        server_container_name = None
+        port = None
+        
         try:
             print(f"\n🧪 Testing generated code from {model_id} (Iteration {iteration})...")
+            
+            # Clean up any orphaned containers from previous runs
+            print("🧹 Cleaning up orphaned containers...")
+            self.docker_service.cleanup_orphaned_containers()
             
             # Read the generated files
             player_path = os.path.join(bot_dir, "player.py")
@@ -281,6 +300,7 @@ class OpenRouterPromptProcessor:
             if not self.docker_service.start_game_server(port, sim=True, num_bot=1):
                 error_msg = "Failed to start game server"
                 log_error(error_msg)
+                cleanup_containers(server_container_name=server_container_name, port=port)
                 return False, error_msg
             
             # Wait for server to be ready
@@ -292,6 +312,7 @@ class OpenRouterPromptProcessor:
             if not self.docker_service.start_client_container(server_container_name, port, "default", sim=True):
                 error_msg = "Failed to start default client"
                 log_error(error_msg)
+                cleanup_containers(server_container_name=server_container_name, port=port)
                 return False, error_msg
             
             # Start test client with our code
@@ -300,6 +321,7 @@ class OpenRouterPromptProcessor:
             if not self.docker_service.start_client_container(server_container_name, port, test_client_name, sim=True):
                 error_msg = "Failed to start test client"
                 log_error(error_msg)
+                cleanup_containers(server_container_name=server_container_name, port=port)
                 return False, error_msg
             
             # Get test client container name using the correct pattern
@@ -311,6 +333,7 @@ class OpenRouterPromptProcessor:
             if not self.docker_service.load_file_into_container(test_client_container_name, tar_stream):
                 error_msg = "Failed to load code into test client"
                 log_error(error_msg)
+                cleanup_containers(test_client_container_name, server_container_name, port)
                 return False, error_msg
             
             # Install requirements
@@ -334,6 +357,7 @@ class OpenRouterPromptProcessor:
                             if install_result != "success":
                                 error_msg = f"Failed to install requirements: {install_result}"
                                 log_error(error_msg)
+                                cleanup_containers(test_client_container_name, server_container_name, port)
                                 return False, error_msg
                             else:
                                 print("✅ Requirements installed successfully")
@@ -343,12 +367,14 @@ class OpenRouterPromptProcessor:
                         if install_result != "success":
                             error_msg = f"Failed to install requirements: {install_result}"
                             log_error(error_msg)
+                            cleanup_containers(test_client_container_name, server_container_name, port)
                             return False, error_msg
                         else:
                             print("✅ Requirements installed successfully")
             else:
                 error_msg = "Container not found for requirements installation"
                 log_error(error_msg)
+                cleanup_containers(test_client_container_name, server_container_name, port)
                 return False, error_msg
             
             # Validate the code
@@ -359,6 +385,7 @@ class OpenRouterPromptProcessor:
                 log_error(error_msg)
                 # Log detailed validation error
                 log_error(f"Validation details: {validation_result}")
+                cleanup_containers(test_client_container_name, server_container_name, port)
                 return False, error_msg
             
             # Wait for game to complete
@@ -387,6 +414,7 @@ class OpenRouterPromptProcessor:
                     log_error(f"Error reading poker client log: {str(e)}")
                     error_msg += f"\n\nError reading logs: {str(e)}"
                 
+                cleanup_containers(test_client_container_name, server_container_name, port)
                 return False, error_msg
             
             # Collect results
@@ -396,16 +424,14 @@ class OpenRouterPromptProcessor:
             )
             
             # Cleanup
-            print("🧹 Cleaning up containers...")
-            self.docker_service.stop_and_remove_container(test_client_container_name)
-            self.docker_service.stop_and_remove_container(server_container_name)
-            self.docker_service.release_port(port)
+            cleanup_containers(test_client_container_name, server_container_name, port)
             
             return success, error_msg
             
         except Exception as e:
             error_msg = f"Game test failed with exception: {str(e)}"
             log_error(error_msg)
+            cleanup_containers(test_client_container_name, server_container_name, port)
             return False, error_msg
     
     def collect_game_results(self, verified_dir: str, port: int, test_client_container: str, server_container: str, iteration: int) -> Tuple[bool, str]:

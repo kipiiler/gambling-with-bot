@@ -578,3 +578,35 @@ class DockerService:
             
         except Exception as e:
             return f"Error reading poker client log: {str(e)}"
+
+    def cleanup_orphaned_containers(self) -> None:
+        """Clean up any orphaned containers that might be left from previous runs."""
+        try:
+            # Get all containers (including stopped ones)
+            containers = self.client.containers.list(all=True)
+            
+            # Look for containers that match our naming patterns
+            orphaned_containers = []
+            for container in containers:
+                name = container.name
+                # Check for game server containers
+                if name.startswith("game_server_"):
+                    orphaned_containers.append(container)
+                # Check for client containers
+                elif name.startswith("client_container_"):
+                    orphaned_containers.append(container)
+            
+            if orphaned_containers:
+                logger.info(f"Found {len(orphaned_containers)} orphaned containers to clean up")
+                for container in orphaned_containers:
+                    try:
+                        logger.info(f"Cleaning up orphaned container: {container.name}")
+                        container.stop()
+                        container.remove(force=True)
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up container {container.name}: {str(e)}")
+            else:
+                logger.info("No orphaned containers found")
+                
+        except Exception as e:
+            logger.error(f"Error during orphaned container cleanup: {str(e)}")
