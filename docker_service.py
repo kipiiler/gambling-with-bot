@@ -425,6 +425,20 @@ class DockerService:
             return "Container not found"
         
         try:
+            exit_code, output = container.exec_run("test -s requirements.txt")
+            if exit_code != 0:
+                # File doesn't exist or is empty
+                logger.info(f"No requirements.txt or empty requirements.txt in container '{container_name}'. Skipping package installation.")
+                return "success"
+            
+            exit_code, output = container.exec_run("cat requirements.txt | tr -d '\\n\\r\\t ' | wc -c")
+            if exit_code == 0:
+                content_size = int(output.decode("utf-8").strip())
+                if content_size == 0:
+                    logger.info(f"Empty requirements.txt in container '{container_name}'. Skipping package installation.")
+                    return "success"
+            
+            # Proceed with installation if requirements.txt has content
             exit_code, output = container.exec_run("pip install -r requirements.txt")
             output_text = output.decode("utf-8")
             
@@ -530,3 +544,37 @@ class DockerService:
 
         except Exception as e:
             logger.error(f"An exception occurred in run_game_and_save_log: {e}", exc_info=True)
+
+    def get_poker_client_log(self, container_name: str) -> str:
+        """Get the poker client log from a container for detailed error diagnosis."""
+        container = self._get_container(container_name)
+        if not container:
+            return f"Container {container_name} not found"
+        
+        try:
+            # Try the primary log location first
+            exit_code, output = container.exec_run("cat /app/output/poker_client.log")
+            if exit_code == 0:
+                log_content = output.decode('utf-8')
+                if log_content.strip():
+                    return log_content
+                else:
+                    return "Poker client log is empty"
+            
+            # Try alternative log locations
+            alternative_logs = [
+                "/app/output/poker_client.log",
+            ]
+            
+            for log_path in alternative_logs:
+                exit_code, output = container.exec_run(f"cat {log_path}")
+                if exit_code == 0:
+                    log_content = output.decode('utf-8')
+                    if log_content.strip():
+                        return f"Found log at {log_path}:\n{log_content}"
+            
+            # If no specific logs found, return container logs
+            return f"No poker client log found. Container logs:\n{self.get_container_logs(container_name, tail=50)}"
+            
+        except Exception as e:
+            return f"Error reading poker client log: {str(e)}"

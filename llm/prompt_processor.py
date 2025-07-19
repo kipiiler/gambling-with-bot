@@ -221,13 +221,14 @@ class OpenRouterPromptProcessor:
         tar_stream.seek(0)
         return tar_stream
     
-    def test_generated_code(self, bot_dir: str, model_id: str) -> Tuple[bool, str]:
+    def test_generated_code(self, bot_dir: str, model_id: str, iteration: int = 1) -> Tuple[bool, str]:
         """
         Test the generated code by running a game with Docker
         
         Args:
             bot_dir: Directory containing the generated code
             model_id: Model ID for logging
+            iteration: Iteration number for organizing results
             
         Returns:
             Tuple of (success, error_message)
@@ -235,8 +236,8 @@ class OpenRouterPromptProcessor:
         if not self.docker_service:
             return False, "Docker service not available"
         
-        # Create verified directory early for error logging
-        verified_dir = os.path.join(bot_dir, "verified")
+        # Create verified directory with iteration subdirectory
+        verified_dir = os.path.join(bot_dir, "verified", f"{iteration}_iteration")
         os.makedirs(verified_dir, exist_ok=True)
         error_log_path = os.path.join(verified_dir, "error.log")
         
@@ -247,7 +248,7 @@ class OpenRouterPromptProcessor:
                 f.write(f"[{timestamp}] {error_message}\n")
         
         try:
-            print(f"\n🧪 Testing generated code from {model_id}...")
+            print(f"\n🧪 Testing generated code from {model_id} (Iteration {iteration})...")
             
             # Read the generated files
             player_path = os.path.join(bot_dir, "player.py")
@@ -270,7 +271,7 @@ class OpenRouterPromptProcessor:
             tar_stream = self.create_tar_stream(player_code, requirements_content)
             
             # Generate a unique test ID
-            test_id = f"test_{model_id.replace('/', '_').replace('-', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            test_id = f"test_{model_id.replace('/', '_').replace('-', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_iter{iteration}"
             
             # Start game server
             port = self.docker_service.generate_random_port()
@@ -314,9 +315,39 @@ class OpenRouterPromptProcessor:
             
             # Install requirements
             print("📦 Installing requirements...")
-            install_result = self.docker_service.install_python_package(test_client_container_name)
-            if install_result != "success":
-                error_msg = f"Failed to install requirements: {install_result}"
+            
+            # Check if requirements.txt is empty before attempting installation
+            container = self.docker_service._get_container(test_client_container_name)
+            if container:
+                exit_code, output = container.exec_run("test -s requirements.txt")
+                if exit_code != 0:
+                    print("ℹ️  No dependencies to install (empty requirements.txt)")
+                else:
+                    # Check if requirements.txt has any non-whitespace content
+                    exit_code, output = container.exec_run("cat requirements.txt | tr -d '\\n\\r\\t ' | wc -c")
+                    if exit_code == 0:
+                        content_size = int(output.decode("utf-8").strip())
+                        if content_size == 0:
+                            print("ℹ️  No dependencies to install (empty requirements.txt)")
+                        else:
+                            install_result = self.docker_service.install_python_package(test_client_container_name)
+                            if install_result != "success":
+                                error_msg = f"Failed to install requirements: {install_result}"
+                                log_error(error_msg)
+                                return False, error_msg
+                            else:
+                                print("✅ Requirements installed successfully")
+                    else:
+                        # Fallback to normal installation if we can't check content size
+                        install_result = self.docker_service.install_python_package(test_client_container_name)
+                        if install_result != "success":
+                            error_msg = f"Failed to install requirements: {install_result}"
+                            log_error(error_msg)
+                            return False, error_msg
+                        else:
+                            print("✅ Requirements installed successfully")
+            else:
+                error_msg = "Container not found for requirements installation"
                 log_error(error_msg)
                 return False, error_msg
             
@@ -332,7 +363,7 @@ class OpenRouterPromptProcessor:
             
             # Wait for game to complete
             print("⏳ Waiting for game to complete...")
-            max_wait_time = 180  # 3 minutes
+            max_wait_time = 60  # 1 minutes
             wait_time = 0
             while wait_time < max_wait_time:
                 status = self.docker_service.check_game_container_status(port, sim=True)
@@ -345,12 +376,23 @@ class OpenRouterPromptProcessor:
             if wait_time >= max_wait_time:
                 error_msg = "Game timed out"
                 log_error(error_msg)
+                
+                # Read poker client log for detailed error information
+                try:
+                    print("🔍 Reading poker client log for timeout details...")
+                    poker_client_log = self.docker_service.get_poker_client_log(test_client_container_name)
+                    log_error(f"Poker client log content:\n{poker_client_log}")
+                    error_msg += f"\n\nPoker client log details:\n{poker_client_log}"
+                except Exception as e:
+                    log_error(f"Error reading poker client log: {str(e)}")
+                    error_msg += f"\n\nError reading logs: {str(e)}"
+                
                 return False, error_msg
             
             # Collect results
             print("📊 Collecting game results...")
             success, error_msg = self.collect_game_results(
-                bot_dir, port, test_client_container_name, server_container_name
+                verified_dir, port, test_client_container_name, server_container_name, iteration
             )
             
             # Cleanup
@@ -366,14 +408,10 @@ class OpenRouterPromptProcessor:
             log_error(error_msg)
             return False, error_msg
     
-    def collect_game_results(self, bot_dir: str, port: int, test_client_container: str, server_container: str) -> Tuple[bool, str]:
-        """Collect game results and save to verified directory"""
+    def collect_game_results(self, verified_dir: str, port: int, test_client_container: str, server_container: str, iteration: int) -> Tuple[bool, str]:
+        """Collect game results and save to verified directory with iteration organization"""
         try:
-            # Create verified directory
-            verified_dir = os.path.join(bot_dir, "verified")
-            os.makedirs(verified_dir, exist_ok=True)
-            
-            # Collect errors from test client
+            # verified_dir is already the iteration-specific directory (e.g., /verified/1_iteration/)
             error_log_path = os.path.join(verified_dir, "error.log")
             errors = []
             
@@ -382,6 +420,11 @@ class OpenRouterPromptProcessor:
                 logs = self.docker_service.get_container_logs(test_client_container, tail=100)
                 if "error" in logs.lower() or "exception" in logs.lower():
                     errors.append(f"Container logs contain errors:\n{logs}")
+                
+                # Get poker client log for detailed error information
+                poker_client_log = self.docker_service.get_poker_client_log(test_client_container)
+                if "error" in poker_client_log.lower() or "exception" in poker_client_log.lower():
+                    errors.append(f"Poker client log contains errors:\n{poker_client_log}")
                 
                 # Check for any error files
                 exit_code, output = self.docker_service._get_container(test_client_container).exec_run("find /app -name '*.log' -exec grep -l -i error {} \\;")
@@ -396,17 +439,24 @@ class OpenRouterPromptProcessor:
             
             # Create username to player ID mapping using actual connection logs
             username_to_player_id = {}
-            users_list = ["default", "test_client"]  # The two clients we started
             
-            for username in users_list:
-                formatted_username = self.docker_service.format_username(username)
-                user_bot_container_name = f"client_container_{port}_{formatted_username}"
-                player_id = self.docker_service.extract_player_id_from_log(user_bot_container_name)
-                if player_id is not None:
-                    username_to_player_id[username] = player_id
-                    print(f"Player ID: {username} -> {player_id}")
-                else:
-                    print(f"Failed to extract player ID for {username}")
+            # Handle default client
+            default_formatted_username = self.docker_service.format_username("default")
+            default_container_name = f"client_container_{port}_{default_formatted_username}"
+            default_player_id = self.docker_service.extract_player_id_from_log(default_container_name)
+            if default_player_id is not None:
+                username_to_player_id["default"] = default_player_id
+                print(f"Player ID: default -> {default_player_id}")
+            else:
+                print(f"Failed to extract player ID for default")
+            
+            # Handle test client (container name is already the full container name)
+            test_player_id = self.docker_service.extract_player_id_from_log(test_client_container)
+            if test_player_id is not None:
+                username_to_player_id[test_client_container] = test_player_id
+                print(f"Player ID: {test_client_container} -> {test_player_id}")
+            else:
+                print(f"Failed to extract player ID for {test_client_container}")
             
             # Try to get game logs from server container
             try:
@@ -425,13 +475,20 @@ class OpenRouterPromptProcessor:
                         if not game_log_files:
                             errors.append("No game log files found in container output.")
                         else:
+                            print(f"Found {len(game_log_files)} game log files: {game_log_files}")
+                            
                             # Read all game log files and create a mapping
                             games_map = {}
                             
                             for log_filename in game_log_files:
                                 try:
                                     # Extract game number from filename (e.g., game_log_1_uuid.json -> 1)
-                                    game_num = int(log_filename.split("_")[2])
+                                    parts = log_filename.split("_")
+                                    if len(parts) >= 3:
+                                        game_num = int(parts[2])
+                                    else:
+                                        # Fallback: use index if parsing fails
+                                        game_num = len(games_map) + 1
                                     
                                     log_filepath = f"/app/output/{log_filename}"
                                     bits, stat = container.get_archive(log_filepath)
@@ -453,20 +510,32 @@ class OpenRouterPromptProcessor:
                                         
                                 except (ValueError, IndexError, KeyError) as e:
                                     print(f"Failed to process {log_filename}: {e}")
-                                    continue
+                                    # Try to save with sequential numbering as fallback
+                                    try:
+                                        game_num = len(games_map) + 1
+                                        log_filepath = f"/app/output/{log_filename}"
+                                        bits, stat = container.get_archive(log_filepath)
+                                        file_obj = io.BytesIO()
+                                        for chunk in bits:
+                                            file_obj.write(chunk)
+                                        file_obj.seek(0)
+                                        with tarfile.open(fileobj=file_obj) as tar:
+                                            member = tar.getmembers()[0]
+                                            extracted_file = tar.extractfile(member)
+                                            if extracted_file:
+                                                game_data = json.loads(extracted_file.read().decode('utf-8'))
+                                                games_map[game_num] = game_data
+                                    except Exception as e2:
+                                        print(f"Failed fallback processing for {log_filename}: {e2}")
+                                        continue
                             
                             if not games_map:
                                 errors.append("No valid game data found in log files.")
                             else:
                                 print(f"Successfully read {len(games_map)} games: {sorted(games_map.keys())}")
                                 
-                                # Convert the games_map to a list for processing
-                                list_of_games = [games_map[i] for i in sorted(games_map.keys())]
-                                
-                                # Save each game log to verified directory
-                                for i, game_data in enumerate(list_of_games, 1):
-                                    game_uuid_str = str(i)
-                                    
+                                # Save each game log to verified directory with sequential numbering
+                                for i, (game_num, game_data) in enumerate(sorted(games_map.items()), 1):
                                     # Use the direct username to player ID mapping from connection logs
                                     # Create reverse mapping (player_id -> username) for the game data
                                     player_id_to_username = {str(player_id): username for username, player_id in username_to_player_id.items()}
@@ -474,12 +543,12 @@ class OpenRouterPromptProcessor:
                                     game_data["usernameMapping"] = username_to_player_id
                                     game_data["playerIdToUsername"] = player_id_to_username
                                     
-                                    # Save to verified directory
-                                    game_log_path = os.path.join(verified_dir, f"gamelog_{game_uuid_str}.json")
+                                    # Save to verified iteration directory with sequential numbering
+                                    game_log_path = os.path.join(verified_dir, f"gamelog_{i}.json")
                                     with open(game_log_path, 'w', encoding='utf-8') as f:
                                         json.dump(game_data, f, indent=2)
                                     
-                                    print(f"✅ Saved game log {game_uuid_str} to {game_log_path}")
+                                    print(f"✅ Saved game log {i} to {game_log_path}")
                                 
             except Exception as e:
                 errors.append(f"Exception getting game log: {str(e)}")
@@ -487,8 +556,8 @@ class OpenRouterPromptProcessor:
             # Save error log with timestamp
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(error_log_path, 'w', encoding='utf-8') as f:
-                f.write(f"Game Test Results for {timestamp}\n")
-                f.write("=" * 50 + "\n\n")
+                f.write(f"Game Test Results for Iteration {iteration} - {timestamp}\n")
+                f.write("=" * 60 + "\n\n")
                 
                 if errors:
                     f.write("ERRORS DETECTED:\n")
@@ -512,7 +581,7 @@ class OpenRouterPromptProcessor:
         except Exception as e:
             return False, f"Failed to collect results: {str(e)}"
     
-    def save_code_blocks_to_bot_directory(self, python_code: str, text_content: str, model_id: str) -> str:
+    def save_code_blocks_to_bot_directory(self, python_code: str, text_content: str, model_id: str, existing_dir: str = None) -> str:
         """
         Save extracted code blocks to bot directory with specified structure
         
@@ -520,27 +589,34 @@ class OpenRouterPromptProcessor:
             python_code: Python code to save as player.py
             text_content: Text content to save as requirements.txt
             model_id: Model ID for directory naming
+            existing_dir: Optional existing directory to update instead of creating new one
             
         Returns:
             Path to the created directory
         """
         try:
-            # Create bot directory if it doesn't exist
-            if not os.path.exists("bot"):
-                os.makedirs("bot")
-            
-            # Create timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # Clean model name for directory
-            model_name = model_id.replace("/", "_").replace("-", "_")
-            
-            # Create directory name
-            dir_name = f"{model_name}_{timestamp}"
-            dir_path = os.path.join("bot", dir_name)
-            
-            # Create directory
-            os.makedirs(dir_path, exist_ok=True)
+            # If existing directory provided, use it
+            if existing_dir and os.path.exists(existing_dir):
+                dir_path = existing_dir
+                print(f"📁 Updating existing directory: {dir_path}")
+            else:
+                # Create bot directory if it doesn't exist
+                if not os.path.exists("bot"):
+                    os.makedirs("bot")
+                
+                # Create timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Clean model name for directory
+                model_name = model_id.replace("/", "_").replace("-", "_")
+                
+                # Create directory name
+                dir_name = f"{model_name}_{timestamp}"
+                dir_path = os.path.join("bot", dir_name)
+                
+                # Create directory
+                os.makedirs(dir_path, exist_ok=True)
+                print(f"📁 Created new directory: {dir_path}")
             
             # Save player.py
             player_path = os.path.join(dir_path, "player.py")
@@ -560,7 +636,7 @@ class OpenRouterPromptProcessor:
             print(f"Error saving code blocks: {e}")
             return ""
     
-    def save_result_to_log(self, result: Dict[str, Any], model_id: str, prompt: str, output_file: str = "output.log") -> None:
+    def save_result_to_log(self, result: Dict[str, Any], model_id: str, prompt: str, output_file: str = "output.log", save_code_blocks: bool = True) -> None:
         """Save the result to output.log with timestamp and metadata"""
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -599,8 +675,8 @@ RAW API RESPONSE:
             print(f"📝 Response length: {len(response_content)} characters")
             print(f"💾 Usage: {result.get('usage', {})}")
             
-            # Extract and save code blocks
-            if response_content:
+            # Extract and save code blocks (only if requested)
+            if save_code_blocks and response_content:
                 python_code, text_content = self.extract_code_blocks(response_content)
                 
                 if python_code or text_content:
