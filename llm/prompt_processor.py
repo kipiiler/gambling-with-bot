@@ -25,22 +25,16 @@ from datetime import datetime
 # Load environment variables
 load_dotenv()
 
-# Import Docker service
-try:
-    from docker import DockerService
-except ImportError:
-    print("Warning: Docker service not available. Game testing will be skipped.")
-    DockerService = None
-
 class OpenRouterPromptProcessor:
     """Process prompts through OpenRouter API with model selection"""
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, docker_service=None):
         """
         Initialize the processor
         
         Args:
             api_key: OpenRouter API key (defaults to OPENROUTER_API_KEY env var)
+            docker_service: Optional Docker service for game testing
         """
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not self.api_key:
@@ -54,8 +48,8 @@ class OpenRouterPromptProcessor:
             "X-Title": "Prompt Processor"
         }
         
-        # Initialize Docker service if available
-        self.docker_service = DockerService() if DockerService else None
+        # Store Docker service if provided
+        self.docker_service = docker_service
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Get list of available models from OpenRouter"""
@@ -241,6 +235,17 @@ class OpenRouterPromptProcessor:
         if not self.docker_service:
             return False, "Docker service not available"
         
+        # Create verified directory early for error logging
+        verified_dir = os.path.join(bot_dir, "verified")
+        os.makedirs(verified_dir, exist_ok=True)
+        error_log_path = os.path.join(verified_dir, "error.log")
+        
+        def log_error(error_message: str):
+            """Helper function to log errors to error.log"""
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(error_log_path, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {error_message}\n")
+        
         try:
             print(f"\n🧪 Testing generated code from {model_id}...")
             
@@ -249,7 +254,9 @@ class OpenRouterPromptProcessor:
             requirements_path = os.path.join(bot_dir, "requirements.txt")
             
             if not os.path.exists(player_path):
-                return False, "player.py not found"
+                error_msg = "player.py not found"
+                log_error(error_msg)
+                return False, error_msg
             
             with open(player_path, 'r', encoding='utf-8') as f:
                 player_code = f.read()
@@ -271,7 +278,9 @@ class OpenRouterPromptProcessor:
             
             print(f"🚀 Starting game server on port {port}...")
             if not self.docker_service.start_game_server(port, sim=True, num_bot=1):
-                return False, "Failed to start game server"
+                error_msg = "Failed to start game server"
+                log_error(error_msg)
+                return False, error_msg
             
             # Wait for server to be ready
             import time
@@ -279,39 +288,51 @@ class OpenRouterPromptProcessor:
             
             # Start default client
             print("🤖 Starting default client...")
-            if not self.docker_service.start_client_container("localhost", port, "default", sim=True):
-                return False, "Failed to start default client"
+            if not self.docker_service.start_client_container(server_container_name, port, "default", sim=True):
+                error_msg = "Failed to start default client"
+                log_error(error_msg)
+                return False, error_msg
             
             # Start test client with our code
             print("🧪 Starting test client with generated code...")
             test_client_name = f"test_client_{test_id}"
-            if not self.docker_service.start_client_container("localhost", port, test_client_name, sim=True):
-                return False, "Failed to start test client"
+            if not self.docker_service.start_client_container(server_container_name, port, test_client_name, sim=True):
+                error_msg = "Failed to start test client"
+                log_error(error_msg)
+                return False, error_msg
             
-            # Get test client container name
+            # Get test client container name using the correct pattern
             formatted_test_id = self.docker_service.format_username(test_client_name)
             test_client_container_name = f"client_container_{port}_{formatted_test_id}"
             
             # Load our code into the test client
             print("📦 Loading generated code into test client...")
             if not self.docker_service.load_file_into_container(test_client_container_name, tar_stream):
-                return False, "Failed to load code into test client"
+                error_msg = "Failed to load code into test client"
+                log_error(error_msg)
+                return False, error_msg
             
             # Install requirements
             print("📦 Installing requirements...")
             install_result = self.docker_service.install_python_package(test_client_container_name)
             if install_result != "success":
-                return False, f"Failed to install requirements: {install_result}"
+                error_msg = f"Failed to install requirements: {install_result}"
+                log_error(error_msg)
+                return False, error_msg
             
             # Validate the code
             print("🔍 Validating generated code...")
             validation_result = self.docker_service.malform_file_client_check(test_client_container_name)
             if validation_result != "success":
-                return False, f"Code validation failed: {validation_result}"
+                error_msg = f"Code validation failed: {validation_result}"
+                log_error(error_msg)
+                # Log detailed validation error
+                log_error(f"Validation details: {validation_result}")
+                return False, error_msg
             
             # Wait for game to complete
             print("⏳ Waiting for game to complete...")
-            max_wait_time = 300  # 5 minutes
+            max_wait_time = 180  # 3 minutes
             wait_time = 0
             while wait_time < max_wait_time:
                 status = self.docker_service.check_game_container_status(port, sim=True)
@@ -322,7 +343,9 @@ class OpenRouterPromptProcessor:
                 print(f"⏳ Game status: {status.value} ({wait_time}s elapsed)")
             
             if wait_time >= max_wait_time:
-                return False, "Game timed out"
+                error_msg = "Game timed out"
+                log_error(error_msg)
+                return False, error_msg
             
             # Collect results
             print("📊 Collecting game results...")
@@ -339,7 +362,9 @@ class OpenRouterPromptProcessor:
             return success, error_msg
             
         except Exception as e:
-            return False, f"Game test failed with exception: {str(e)}"
+            error_msg = f"Game test failed with exception: {str(e)}"
+            log_error(error_msg)
+            return False, error_msg
     
     def collect_game_results(self, bot_dir: str, port: int, test_client_container: str, server_container: str) -> Tuple[bool, str]:
         """Collect game results and save to verified directory"""
@@ -369,23 +394,118 @@ class OpenRouterPromptProcessor:
             except Exception as e:
                 errors.append(f"Error collecting logs: {str(e)}")
             
-            # Try to get game log
+            # Create username to player ID mapping using actual connection logs
+            username_to_player_id = {}
+            users_list = ["default", "test_client"]  # The two clients we started
+            
+            for username in users_list:
+                formatted_username = self.docker_service.format_username(username)
+                user_bot_container_name = f"client_container_{port}_{formatted_username}"
+                player_id = self.docker_service.extract_player_id_from_log(user_bot_container_name)
+                if player_id is not None:
+                    username_to_player_id[username] = player_id
+                    print(f"Player ID: {username} -> {player_id}")
+                else:
+                    print(f"Failed to extract player ID for {username}")
+            
+            # Try to get game logs from server container
             try:
-                success, error_msg = self.docker_service.run_game_and_save_log(server_container, 2, verified_dir)
-                if not success:
-                    errors.append(f"Failed to get game log: {error_msg}")
+                container = self.docker_service._get_container(server_container)
+                if not container:
+                    errors.append(f"Container '{server_container}' not found.")
+                else:
+                    ls_command = "ls /app/output"
+                    exit_code, output = container.exec_run(cmd=ls_command)
+                    if exit_code != 0:
+                        errors.append(f"Could not list files in /app/output: {output.decode()}")
+                    else:
+                        files = output.decode().splitlines()
+                        game_log_files = [f for f in files if f.startswith("game_log_") and f.endswith(".json")]
+                        
+                        if not game_log_files:
+                            errors.append("No game log files found in container output.")
+                        else:
+                            # Read all game log files and create a mapping
+                            games_map = {}
+                            
+                            for log_filename in game_log_files:
+                                try:
+                                    # Extract game number from filename (e.g., game_log_1_uuid.json -> 1)
+                                    game_num = int(log_filename.split("_")[2])
+                                    
+                                    log_filepath = f"/app/output/{log_filename}"
+                                    bits, stat = container.get_archive(log_filepath)
+
+                                    file_obj = io.BytesIO()
+                                    for chunk in bits:
+                                        file_obj.write(chunk)
+                                    file_obj.seek(0)
+
+                                    with tarfile.open(fileobj=file_obj) as tar:
+                                        member = tar.getmembers()[0]
+                                        extracted_file = tar.extractfile(member)
+                                        if not extracted_file:
+                                            print(f"Failed to extract {log_filename}")
+                                            continue
+                                        
+                                        game_data = json.loads(extracted_file.read().decode('utf-8'))
+                                        games_map[game_num] = game_data
+                                        
+                                except (ValueError, IndexError, KeyError) as e:
+                                    print(f"Failed to process {log_filename}: {e}")
+                                    continue
+                            
+                            if not games_map:
+                                errors.append("No valid game data found in log files.")
+                            else:
+                                print(f"Successfully read {len(games_map)} games: {sorted(games_map.keys())}")
+                                
+                                # Convert the games_map to a list for processing
+                                list_of_games = [games_map[i] for i in sorted(games_map.keys())]
+                                
+                                # Save each game log to verified directory
+                                for i, game_data in enumerate(list_of_games, 1):
+                                    game_uuid_str = str(i)
+                                    
+                                    # Use the direct username to player ID mapping from connection logs
+                                    # Create reverse mapping (player_id -> username) for the game data
+                                    player_id_to_username = {str(player_id): username for username, player_id in username_to_player_id.items()}
+                                    
+                                    game_data["usernameMapping"] = username_to_player_id
+                                    game_data["playerIdToUsername"] = player_id_to_username
+                                    
+                                    # Save to verified directory
+                                    game_log_path = os.path.join(verified_dir, f"gamelog_{game_uuid_str}.json")
+                                    with open(game_log_path, 'w', encoding='utf-8') as f:
+                                        json.dump(game_data, f, indent=2)
+                                    
+                                    print(f"✅ Saved game log {game_uuid_str} to {game_log_path}")
+                                
             except Exception as e:
                 errors.append(f"Exception getting game log: {str(e)}")
             
-            # Save error log
+            # Save error log with timestamp
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(error_log_path, 'w', encoding='utf-8') as f:
+                f.write(f"Game Test Results for {timestamp}\n")
+                f.write("=" * 50 + "\n\n")
+                
                 if errors:
-                    f.write(f"Game Test Errors for {datetime.now()}\n")
-                    f.write("=" * 50 + "\n\n")
+                    f.write("ERRORS DETECTED:\n")
+                    f.write("-" * 20 + "\n")
                     for error in errors:
                         f.write(f"{error}\n\n")
                 else:
                     f.write("No errors detected during game test.\n")
+                
+                # Add container logs for debugging
+                f.write("\nCONTAINER LOGS:\n")
+                f.write("-" * 20 + "\n")
+                try:
+                    container_logs = self.docker_service.get_container_logs(test_client_container, tail=50)
+                    f.write(f"Test Client Logs:\n{container_logs}\n\n")
+                except Exception as e:
+                    f.write(f"Failed to get container logs: {str(e)}\n")
             
             return len(errors) == 0, "Game test completed"
             

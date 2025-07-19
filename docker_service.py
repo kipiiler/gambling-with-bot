@@ -204,36 +204,32 @@ class DockerService:
 
     def start_client_container(self, host: str, server_port: int, id: str, sim: bool = False) -> bool:
         """Start a client container connected to a game server."""
-        formatted_id = self.format_username(id)
-        client_container_name = f"client_container_{server_port}_{formatted_id}"
+        formatted_username = self.format_username(id)
+        user_bot_container_name = f"client_container_{server_port}_{formatted_username}"
+        
         try:
-            container = self._start_container(
-                settings.RUNNER_IMAGE,
-                ports={},
-                name=client_container_name,
-                environment={
-                    "DOCKER_HOST": settings.DOCKER_SOCKET,
-                },
+            user_container = self.client.containers.run(
+                image=settings.RUNNER_IMAGE,
+                detach=True,
+                name=user_bot_container_name,
                 mem_limit="100m",
             )
 
-            if not container:
-                return False
-            
-            self.connect_container_to_network(settings.GAME_NETWORK_NAME, client_container_name)
+            # Connect to network
+            self.connect_container_to_network(settings.GAME_NETWORK_NAME, user_bot_container_name)
 
             # Ensure output directory exists and has proper permissions for client
-            container.exec_run("mkdir -p /app/output")
-            container.exec_run("chmod 755 /app/output")
+            user_container.exec_run("mkdir -p /app/output")
+            user_container.exec_run("chmod 755 /app/output")
 
             # Execute the command inside the container
             if sim:
                 exec_command = f"python main.py --host={host} --port={server_port} -s True"
             else:
                 exec_command = f"python main.py --host={host} --port={server_port}"
-            container.exec_run(exec_command, detach=True)
+            user_container.exec_run(exec_command, detach=True)
 
-            logger.info(f"Client container {client_container_name} started.")
+            logger.info(f"Client container {user_bot_container_name} started.")
             return True
         except Exception as e:
             logger.error(f"Failed to start client container: {str(e)}")
