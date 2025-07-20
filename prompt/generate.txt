@@ -1,6 +1,6 @@
-You are an expert poker AI developer creating the ultimate bot for Husky Hold'em, a No-Limit Texas Hold'em competition platform hosted by the Algorithmic Trading Club at UW. Your bot must subclass Bot as SimplePlayer in player.py, implementing all required methods exactly as defined in the template, without removing or renaming any predefined functions (on_start, on_round_start, get_action, on_end_round, on_end_game). Preserve the class name SimplePlayer for compatibility with the game server. Use GTO principles, equity calculations, and opponent modeling to maximize delta money (chip difference from starting to ending chips) over multiple games in simulations where chips persist across games (money doesn’t reset, so adapt strategies for long-term survival; if chips run out, default to fold and lose on blinds).
+You are an expert poker AI developer working at a big quant firm and currently creating the ultimate bot for Husky Hold'em, the biggest No-Limit Texas Hold'em poker bot competition to win yourself biggest promotion you have in life.
 
-**Detailed Game Rules (from Husky Hold’em Wiki PDF):**
+**Detailed Game Rules**
 - No-Limit Texas Hold'em with 2-10 players (often 6-handed tables); bots compete in heads-up or multi-player matches hosted by a central game server.
 - Players start with $1,000 chips at the simulation start; simulations run for n games (more than 10 per run); blinds rotate and increase every n games (e.g., after certain rounds); big/small blinds are posted pre-flop.
 - Goal: Maximize delta money (ending chips minus starting chips); if a player runs out of chips, they default to fold and may lose more on blinds; no rebuys.
@@ -9,8 +9,78 @@ You are an expert poker AI developer creating the ultimate bot for Husky Hold'em
 - Hand rankings: Royal flush > Straight flush > Four of a kind > Full house > Flush > Straight > Three of a kind > Two pair > One pair > High card.
 - Showdown: If multiple players remain after river betting, best 5-card hand (using any combination of 2 hole cards + 5 community cards) wins the pot; side pots form for all-ins with eligible players.
 - Bots must handle incomplete information, bluffing, multi-way pots, randomized table positions, and diverse strategies; results measured as delta money against opponents like the House Bot or others.
-- Tournament phases: Development (test vs. House Bot), Tournament (group rounds with buckets, sum scores across buckets), Showdown (top 6 play 6 games each).
 - Technical Limits: 30 seconds max per move (timeout causes automatic fold); 100MB max memory usage; any error/exception causes automatic fold; bots must be error-free and production-ready.
+
+Your task: Implement the ultimate SimplePlayer bot in player.py by subclassing Bot as in the template below and follow the above game rules.
+
+Bot Design and Competition Rules:
+
+1. Your bot must subclass Bot as SimplePlayer, implementing all required methods exactly as in the template. Preserve the class name SimplePlayer for compatibility with the game server. The template for the class is as
+**SimplePlayer Template:**
+```python
+from typing import List, Tuple
+from bot import Bot
+from type.poker_action import PokerAction
+from type.round_state import RoundStateClient
+
+class SimplePlayer(Bot):
+    def __init__(self):
+        super().__init__()
+        # TODO implement this
+
+    def on_start(self, starting_chips: int, player_hands: List[str], blind_amount: int, big_blind_player_id: int, small_blind_player_id: int, all_players: List[int]):
+        # TODO implement this
+
+    def on_round_start(self, round_state: RoundStateClient, remaining_chips: int):
+        # TODO implement this
+
+    def get_action(self, round_state: RoundStateClient, remaining_chips: int) -> Tuple[PokerAction, int]:
+        """ Returns the action for the player. """
+        # TODO implement this
+
+    def on_end_round(self, round_state: RoundStateClient, remaining_chips: int):
+        """ Called at the end of the round. """
+        # TODO implement this
+
+    def on_end_game(self, round_state: RoundStateClient, player_score: float, all_scores: dict, active_players_hands: dict):
+        # TODO implement this
+```
+2. DO NOT rename or remove any predefined methods (on_start, on_round_start, get_action, on_end_round, on_end_game), and do not change their signatures.
+3. You may add helper functions and instance variables for strategy or tracking.
+4. Your bot should use advanced poker AI strategies:
+    - Use GTO principles, hand equity calculation (Monte Carlo if within 30s/100MB), opponent modeling from player_actions/bets, and exploit chip persistence across games for long-term profit.
+    - Handle incomplete information, bluffing, multi-way pots, variable positions, blind increases, all-in, and side pots.
+    - Use position (derive from all_players and current_player), bluff based on board texture and opponent actions/bets, model opponents from player_actions, player_bets, player_money across rounds/games (track history in instance variables). Handle side pots, all-ins, low stacks, blind increases, multi-way pots, and persistent chips in simulations. Ensure error-free (no exceptions), efficient (quick parsing/calculations)
+5. For each action, always return valid actions:
+    - For RAISE: the amount raise combine with your current bet must be larger than the the current raise.
+    - For CALL: You don't need to specify the amount you call, it default to match exactly the amount needed to call (current_bet - your bet).
+    - For CHECK: You can't check if round's current bet is larger than 0. Resort to other action (eg CALL, RAISE, ALL_IN).
+    - For ALL_IN: You don't need to specify the amount you all in, it will default to all your current money.
+    - **INVALID ACTION WILL MAKE YOU LOSE MONEY (automatic result in fold if the condition is not match for each action), so logic must always check bounds and edge cases**.
+6. If you use any external libraries, they must be listed in requirements.txt (pure Python only).
+7. Implement your bot with SimplePlayer. See full RoundStateClient, PokerAction, and PokerRound definitions below.
+8. Your bot should maximize delta money (ending chips minus starting chips). Positive mean gaining money, the more money you gain the better.
+9. There might will be data on previous run (error and game score) if this is not the first time you implement. If there is error, fix it so your bot can run. Try to improve your bot from previous round.
+10. If there are no usage of external requirements, the text secion for requirement must be empty. DO NOT PUT ANYTHING ELSE. If you want to use any external library, you must put it in that text block
+11. Your response must consist ONLY of two files: the complete player.py (as a Python code block) implementing the bot with all template elements preserved plus your improvements, and requirements.txt (as a text block) listing any dependencies (pure Python only, e.g., numpy if needed for calculations). Do not include any other text, explanations, or outputs. See example response below:
+Example response:
+```python
+<Your python code>
+```
+
+```text
+deuce
+numpy
+matplotlib
+<any external library you want to use, put it here>
+...
+```
+
+**Few-Shot Examples:**
+- Pre-flop (round=='PREFLOP'), with AA ('Ah','As') in late position (your current_player near end of all_players) and a raise ahead (player_actions show 'Raise'): 3-bet to 3x the previous raise if stack allows, equity ~85% vs. typical range.
+- Post-river (round=='RIVER'), with top pair and pot-committed opponent (high player_bets): Value bet 2/3 pot if no strong action shown, else call if pot odds favorable.
+
+**References**
 
 **RoundStateClient Full Definition:**
 ```python
@@ -19,18 +89,17 @@ from typing import Dict, List, Any
 
 @dataclass
 class RoundStateClient:
-    round_num: int  # Current round number
-    round: str  # e.g., 'PREFLOP', 'FLOP', 'TURN', 'RIVER'
-    community_cards: list  # List of community cards, e.g., ['Ah', 'Ks', '3d']
-    pot: int  # Current pot size
-    current_player: int  # Your player ID
-    current_bet: int  # Amount to match (to call)
+    round_num: int # The number of the current round
+    round: str # e.g., 'Preflop', 'Flop', 'Turn', 'River'
+    community_cards: List[str] # List of community cards, e.g., ['Ah', 'Ks', '3d']
+    pot: int # The total pot
+    current_player: List[int] # The ids of the current players
+    current_bet: int # The current bet (need to match round's current bet minus your current bet if you want to call)
     min_raise: int  # Minimum raise amount
     max_raise: int  # Maximum raise amount (your remaining chips)
-    player_bets: dict[int, int]  # Bets by player ID
-    player_actions: dict[int, str]  # Actions by player ID, e.g., 'Raise'
-    player_money: dict[int, int] = None  # Remaining chips by player ID
-    side_pots: list[dict[str, any]] = None  # List of dicts with 'amount' and 'eligible_players' keys
+    player_bets: Dict[str, int]  # Bets by player ID
+    player_actions: Dict[str, str]  # Actions by player ID, e.g., {'3336760419': 'Check', '3266396022': 'Check'}
+    side_pots: list[Dict[str, any]] = None  # List of dicts with 'amount' and 'eligible_players' keys
 
     @classmethod
     def from_message(cls, message: Dict[str, Any]) -> 'RoundStateClient':
@@ -46,7 +115,6 @@ class RoundStateClient:
             max_raise=message['max_raise'],
             player_bets=message['player_bets'],
             player_actions=message['player_actions'],
-            player_money=message.get('player_money'),
             side_pots=message.get('side_pots', [])
         )
 ```
@@ -68,7 +136,6 @@ class PokerRound(Enum):
     TURN = 2
     RIVER = 3
 ```
-- Return actions from get_action as a tuple: (PokerAction, amount), where amount=0 for FOLD/CHECK/CALL, amount>0 for RAISE (between min_raise and max_raise), and for ALL_IN, amount is ignored but set to remaining_chips.
 
 **Bot abstract class:**
 ```python
@@ -112,62 +179,4 @@ class Bot(ABC):
     def on_end_game(self, round_state: RoundStateClient, player_score: float, all_scores: dict, active_players_hands: dict) -> None:
         """ Called at the end of the game. """
         pass
-```
-
-**SimplePlayer Full Template (from player.py, including all print statements; do not remove them or any methods):**
-```python
-from typing import List, Tuple
-from bot import Bot
-from type.poker_action import PokerAction
-from type.round_state import RoundStateClient
-
-class SimplePlayer(Bot):
-    def __init__(self):
-        super().__init__()
-        # TODO implement this
-
-    def on_start(self, starting_chips: int, player_hands: List[str], blind_amount: int, big_blind_player_id: int, small_blind_player_id: int, all_players: List[int]):
-        # TODO implement this
-
-    def on_round_start(self, round_state: RoundStateClient, remaining_chips: int):
-        # TODO implement this
-
-    def get_action(self, round_state: RoundStateClient, remaining_chips: int) -> Tuple[PokerAction, int]:
-        """ Returns the action for the player. """
-        # TODO implement this
-
-    def on_end_round(self, round_state: RoundStateClient, remaining_chips: int):
-        """ Called at the end of the round. """
-        # TODO implement this
-
-    def on_end_game(self, round_state: RoundStateClient, player_score: float, all_scores: dict, active_players_hands: dict):
-        # TODO implement this
-```
-
-**Additional Details from README.md:**
-- Project structure: Implement bot logic only in SimplePlayer within player.py; the above definition for type PokerAction, RoundStateClient, etc...; include requirements.txt for dependencies.
-- Implement Your Bot: Modify logic inside functions; extend as needed but keep all predefined methods; use RoundStateClient for game state; return moves using PokerAction enums; logs to standard output and game_result.log.
-- Dev Tips: Use PokerAction.RAISE, CALL, CHECK, FOLD; supports Docker for containerized runs.
-- When using PokerAction.CALL, the amount parameter must match the current amount needed to call (difference between highest bet and your current bet)
-
-Implement the full SimplePlayer class by extending the template with advanced strategies: calculate hand equity (e.g., Monte Carlo simulation if efficient within 30s/100MB), use position (derive from all_players and current_player), bluff based on board texture and opponent actions/bets, model opponents from player_actions, player_bets, player_money across rounds/games (track history in instance variables). Handle side pots, all-ins, low stacks, blind increases, multi-way pots, and persistent chips in simulations. Ensure error-free (no exceptions), efficient (quick parsing/calculations), and valid returns (e.g., amount for RAISE >= min_raise, <= max_raise; adjust for current_bet and player_bets[self.id]).
-
-**Few-Shot Examples:**
-- Pre-flop (round=='PREFLOP'), with AA ('Ah','As') in late position (your current_player near end of all_players) and a raise ahead (player_actions show 'Raise'): 3-bet to 3x the previous raise if stack allows, equity ~85% vs. typical range.
-- Post-river (round=='RIVER'), with top pair and pot-committed opponent (high player_bets): Value bet 2/3 pot if no strong action shown, else call if pot odds favorable.
-
-Your response must consist ONLY of two files: the complete player.py (as a Python code block) implementing the bot with all template elements preserved plus your improvements, and requirements.txt (as a text block) listing any dependencies (pure Python only, e.g., numpy if needed for calculations). Do not include any other text, explanations, or outputs.
-If the requirements is empty return empty content for requirements.txt in that text block. If you want to use any external library, you must put it in that text block
-
-Example response:
-```python
-<Your python code>
-```
-
-```text
-deuce
-numpy
-matplotlib
-<any external library you want to use, put it here>
-...
 ```

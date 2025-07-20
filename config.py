@@ -21,4 +21,15 @@ class Settings:
 
     GAME_RUN_TIMEOUT: int = 180  # seconds
 
+# Configuration settings for the poker bot training system
+
+# LLM Settings
+DEFAULT_TEMPERATURE = 1.0
+DEFAULT_MAX_TOKENS = 9000
+
+# Training Settings
+DEFAULT_NUM_ITERATIONS = 5
+
+# Other settings can be added here as needed
+
 settings = Settings()

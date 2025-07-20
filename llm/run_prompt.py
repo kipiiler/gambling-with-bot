@@ -67,7 +67,7 @@ class QuickPromptRunner:
             context = model.get("context_length", "N/A")
             print(f"{i:<3} {model_id:<35} {provider:<12} {context:<8}")
     
-    def process_prompt(self, model_id: str, prompt: str, temperature: float = 0.7, max_tokens: int = 4000) -> Dict[str, Any]:
+    def process_prompt(self, model_id: str, prompt: str, temperature: float = 1.0, max_tokens: int = 9000) -> Dict[str, Any]:
         """Process prompt with specified model"""
         payload = {
             "model": model_id,
@@ -288,8 +288,8 @@ def main():
     parser.add_argument("--model", type=str, help="Model ID to use")
     parser.add_argument("--prompt-file", type=str, default="prompt/generate.txt", help="Prompt file path")
     parser.add_argument("--output", type=str, default="output.log", help="Output log file")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Temperature (0.0-2.0)")
-    parser.add_argument("--max-tokens", type=int, default=4000, help="Max tokens")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Temperature (0.0-2.0)")
+    parser.add_argument("--max-tokens", type=int, default=9000, help="Max tokens")
     
     args = parser.parse_args()
     

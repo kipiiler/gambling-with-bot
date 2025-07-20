@@ -54,7 +54,7 @@ class OpenRouterClient:
         self,
         messages: List[Dict[str, str]],
         model: str = "anthropic/claude-3.5-sonnet",
-        temperature: float = 0.7,
+        temperature: float = 1.0,
         max_tokens: Optional[int] = None,
         stream: bool = False,
         **kwargs

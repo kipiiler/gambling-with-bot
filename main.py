@@ -7,14 +7,15 @@ from datetime import datetime
 
 from docker_service import DockerService
 from llm.prompt_processor import OpenRouterPromptProcessor
+from config import DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, DEFAULT_NUM_ITERATIONS
 
 
 @dataclass
 class ProcessingConfig:
     """Configuration for processing parameters"""
-    temperature: float = 0.7
-    max_tokens: int = 4000
-    k_iterations: int = 1
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = DEFAULT_MAX_TOKENS
+    k_iterations: int = DEFAULT_NUM_ITERATIONS
     prompt_file: str = "prompt/generate.txt"
 
 
@@ -191,39 +192,6 @@ Performance Analysis:
         else:
             # No error log file found, assume there might be issues
             feedback_data['errors'] = f"Error log file not found for iteration in {verified_dir}"
-        
-        # Also read from previous iteration's error.log if this is not the first iteration
-        iteration_num = FeedbackAnalyzer._extract_iteration_number(verified_dir)
-        if iteration_num and iteration_num > 1:
-            prev_iteration_dir = os.path.dirname(verified_dir)  # Get parent directory
-            prev_error_log_path = os.path.join(prev_iteration_dir, f"iteration_{iteration_num - 1}", "error.log")
-            if os.path.exists(prev_error_log_path):
-                # Add a small delay to ensure file is fully written
-                import time
-                time.sleep(0.5)
-                
-                try:
-                    with open(prev_error_log_path, 'r', encoding='utf-8') as f:
-                        prev_error_content = f.read()
-                        prev_error_lines_with_context = FeedbackAnalyzer._extract_error_lines_with_context(prev_error_content)
-                        
-                        # Always include previous iteration content, even if no errors
-                        if prev_error_lines_with_context:
-                            # Add previous iteration errors to the feedback
-                            if 'error_lines_with_context' in feedback_data:
-                                feedback_data['error_lines_with_context'] += f"\n\n--- PREVIOUS ITERATION ERRORS ---\n\n{prev_error_lines_with_context}"
-                            else:
-                                feedback_data['error_lines_with_context'] = f"PREVIOUS ITERATION ERRORS:\n{prev_error_lines_with_context}"
-                            print(f"📖 Added error lines from previous iteration {iteration_num - 1}")
-                        else:
-                            # No errors in previous iteration, include the full content as context
-                            if 'error_lines_with_context' in feedback_data:
-                                feedback_data['error_lines_with_context'] += f"\n\n--- PREVIOUS ITERATION CONTEXT (NO ERRORS) ---\n\n{prev_error_content}"
-                            else:
-                                feedback_data['error_lines_with_context'] = f"PREVIOUS ITERATION CONTEXT (NO ERRORS):\n{prev_error_content}"
-                            print(f"📖 Added previous iteration context (no errors) from iteration {iteration_num - 1}")
-                except Exception as e:
-                    print(f"⚠️  Error reading previous iteration error log: {e}")
     
     @staticmethod
     def _extract_error_lines_with_context(error_content: str) -> str:
@@ -395,7 +363,7 @@ PREVIOUS ITERATION CODE (player.py):
 
 PREVIOUS ITERATION REQUIREMENTS (requirements.txt):
 ```text
-{previous_requirements or 'No requirements specified'}
+{previous_requirements or '# No requirements specified'}
 ```
 
 """
@@ -408,7 +376,7 @@ CURRENT CODE (player.py):
 
 CURRENT REQUIREMENTS (requirements.txt):
 ```text
-{feedback_data.get('current_requirements', 'No requirements specified')}
+{feedback_data.get('current_requirements', '# No requirements specified')}
 ```
 
 """
@@ -1113,14 +1081,14 @@ class PromptProcessorApp:
         """Get processing parameters from user input"""
         print("\n⚙️  Processing Parameters:")
         try:
-            temperature = float(input("Temperature (0.0-2.0, default 0.7): ") or "0.7")
-            max_tokens = int(input("Max tokens (default 4000): ") or "4000")
-            k_iterations = int(input("Number of iterations (default 1): ") or "1")
+            temperature = float(input(f"Temperature (0.0-2.0, default {DEFAULT_TEMPERATURE}): ") or str(DEFAULT_TEMPERATURE))
+            max_tokens = int(input(f"Max tokens (default {DEFAULT_MAX_TOKENS}): ") or str(DEFAULT_MAX_TOKENS))
+            k_iterations = int(input(f"Number of iterations (default {DEFAULT_NUM_ITERATIONS}): ") or str(DEFAULT_NUM_ITERATIONS))
         except ValueError:
             print("Using default parameters...")
-            temperature = 0.7
-            max_tokens = 4000
-            k_iterations = 1
+            temperature = DEFAULT_TEMPERATURE
+            max_tokens = DEFAULT_MAX_TOKENS
+            k_iterations = DEFAULT_NUM_ITERATIONS
         
         return ProcessingConfig(
             temperature=temperature,

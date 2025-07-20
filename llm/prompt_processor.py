@@ -126,8 +126,8 @@ class OpenRouterPromptProcessor:
             "messages": [
                 {"role": "user", "content": prompt}
             ],
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 4000),
+            "temperature": kwargs.get("temperature", 1.0),
+            "max_tokens": kwargs.get("max_tokens", 9000),
             "stream": False
         }
         
@@ -787,12 +787,12 @@ def main():
         # Get processing parameters
         print("\n⚙️  Processing Parameters:")
         try:
-            temperature = float(input("Temperature (0.0-2.0, default 0.7): ") or "0.7")
-            max_tokens = int(input("Max tokens (default 4000): ") or "4000")
+            temperature = float(input("Temperature (0.0-2.0, default 1.0): ") or "1.0")
+            max_tokens = int(input("Max tokens (default 9000): ") or "9000")
         except ValueError:
             print("Using default parameters...")
-            temperature = 0.7
-            max_tokens = 4000
+            temperature = 1.0
+            max_tokens = 9000
         
         # Process the prompt
         print(f"\n🚀 Processing prompt with {selected_model['id']}...")
