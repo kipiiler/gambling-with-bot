@@ -29,7 +29,15 @@ def read_game_logs_from_iteration(iteration_dir: str) -> List[Dict]:
     
     # Find all JSON files in the iteration directory
     json_files = glob.glob(os.path.join(iteration_dir, "gamelog_*.json"))
-    json_files.sort()  # Sort to ensure consistent order
+    
+    # Sort by numerical game ID instead of alphabetically
+    def extract_game_id(filename):
+        match = re.search(r'gamelog_(\d+)\.json', filename)
+        if match:
+            return int(match.group(1))
+        return 0
+    
+    json_files.sort(key=extract_game_id)  # Sort by numerical game ID
     
     print(f"📁 Found {len(json_files)} JSON files in {iteration_dir}")
     
