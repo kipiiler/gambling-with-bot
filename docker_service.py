@@ -599,6 +599,9 @@ class DockerService:
             if orphaned_containers:
                 logger.info(f"Found {len(orphaned_containers)} orphaned containers to clean up")
                 for container in orphaned_containers:
+                    if container.status == 'running':
+                        logger.info(f"Skipping running container: {container.name}")
+                        continue
                     try:
                         logger.info(f"Cleaning up orphaned container: {container.name}")
                         container.stop()
@@ -610,3 +613,26 @@ class DockerService:
                 
         except Exception as e:
             logger.error(f"Error during orphaned container cleanup: {str(e)}")
+
+    def cleanup_containers_by_port(self, port: int) -> None:
+        """Clean up all containers related to a specific port."""
+        try:
+            containers = self.client.containers.list(all=True)
+            port_str = str(port)
+            to_remove = [c for c in containers if f"_{port_str}" in c.name and 
+                        (c.name.startswith("game_server_") or c.name.startswith("client_container_"))]
+            
+            if to_remove:
+                logger.info(f"Found {len(to_remove)} containers to clean up for port {port}")
+                for container in to_remove:
+                    try:
+                        if container.status == 'running':
+                            container.stop()
+                        container.remove(force=True)
+                        logger.info(f"Cleaned up container: {container.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up container {container.name}: {str(e)}")
+            else:
+                logger.info(f"No containers found for port {port}")
+        except Exception as e:
+            logger.error(f"Error during cleanup by port {port}: {str(e)}")

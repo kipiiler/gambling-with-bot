@@ -4,6 +4,7 @@ import os
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from docker_service import DockerService
 from llm.prompt_processor import OpenRouterPromptProcessor
@@ -505,75 +506,81 @@ class IterativeGenerator:
 
         main_bot_dir = dir_path
 
-        for iteration in range(1, config.k_iterations + 1):
-            print(f"\n{'='*60}")
-            print(f"🔄 ITERATION {iteration}/{config.k_iterations}")
-            print(f"{'='*60}")
-            
-            # Debug: Show current main_bot_dir
-            print(f"📁 Using main bot directory: {main_bot_dir}")
-            
-            # Process the current iteration
-            iteration_result = self._process_single_iteration(
-                iteration, config.k_iterations, selected_model, current_prompt, 
-                config, main_bot_dir, previous_code, previous_requirements
-            )
-            
-            all_results.append(iteration_result)
-            
-            # Debug: Show current main_bot_dir status
-            print(f"📁 Main bot directory: {main_bot_dir}")
-            
-            if iteration_result.success:
-                best_result = iteration_result.result
-                best_bot_dir = iteration_result.bot_dir
+        port = self.processor.docker_service.generate_random_port()
+        try:
+            for iteration in range(1, config.k_iterations + 1):
+                print(f"\n{'='*60}")
+                print(f"🔄 ITERATION {iteration}/{config.k_iterations}")
+                print(f"{'='*60}")
                 
-                # If successful and not the last iteration, create improvement prompt
+                # Debug: Show current main_bot_dir
+                print(f"📁 Using main bot directory: {main_bot_dir}")
+                
+                # Process the current iteration
+                iteration_result = self._process_single_iteration(
+                    iteration, config.k_iterations, selected_model, current_prompt, 
+                    config, main_bot_dir, previous_code, previous_requirements, port=port
+                )
+                
+                all_results.append(iteration_result)
+                
+                # Debug: Show current main_bot_dir status
+                print(f"📁 Main bot directory: {main_bot_dir}")
+                
+                if iteration_result.success:
+                    best_result = iteration_result.result
+                    best_bot_dir = iteration_result.bot_dir
+                    
+                    # If successful and not the last iteration, create improvement prompt
+                    if iteration < config.k_iterations:
+                        try:
+                            current_prompt = self._create_next_iteration_prompt(
+                                original_prompt, iteration, iteration_result, previous_code, previous_requirements
+                            )
+                        except Exception as e:
+                            print(f"⚠️  Error creating feedback prompt: {e}")
+                            # Fallback to original prompt
+                            current_prompt = original_prompt
+                else:
+                    # Even if iteration failed, create feedback prompt for next iteration
+                    if iteration < config.k_iterations:
+                        try:
+                            current_prompt = self._create_next_iteration_prompt(
+                                original_prompt, iteration, iteration_result, previous_code, previous_requirements
+                            )
+                        except Exception as e:
+                            print(f"⚠️  Error creating feedback prompt: {e}")
+                            # Fallback to original prompt
+                            current_prompt = original_prompt
+                
+                # Update previous code for next iteration
+                previous_code = iteration_result.code
+                previous_requirements = iteration_result.requirements
+                
+                # Debug: Show iteration completion
+                print(f"✅ Iteration {iteration} completed. Success: {iteration_result.success}")
                 if iteration < config.k_iterations:
-                    try:
-                        current_prompt = self._create_next_iteration_prompt(
-                            original_prompt, iteration, iteration_result, previous_code, previous_requirements
-                        )
-                    except Exception as e:
-                        print(f"⚠️  Error creating feedback prompt: {e}")
-                        # Fallback to original prompt
-                        current_prompt = original_prompt
-            else:
-                # Even if iteration failed, create feedback prompt for next iteration
-                if iteration < config.k_iterations:
-                    try:
-                        current_prompt = self._create_next_iteration_prompt(
-                            original_prompt, iteration, iteration_result, previous_code, previous_requirements
-                        )
-                    except Exception as e:
-                        print(f"⚠️  Error creating feedback prompt: {e}")
-                        # Fallback to original prompt
-                        current_prompt = original_prompt
+                    print(f"🔄 Preparing for iteration {iteration + 1}...")
+                else:
+                    print("🏁 All iterations completed!")
             
-            # Update previous code for next iteration
-            previous_code = iteration_result.code
-            previous_requirements = iteration_result.requirements
+            # Display summary
+            self._display_iteration_summary(config.k_iterations, main_bot_dir, all_results, best_result, best_bot_dir)
             
-            # Debug: Show iteration completion
-            print(f"✅ Iteration {iteration} completed. Success: {iteration_result.success}")
-            if iteration < config.k_iterations:
-                print(f"🔄 Preparing for iteration {iteration + 1}...")
-            else:
-                print("🏁 All iterations completed!")
-        
-        # Display summary
-        self._display_iteration_summary(config.k_iterations, main_bot_dir, all_results, best_result, best_bot_dir)
-        
-        # Create summary log in main bot directory
-        if main_bot_dir:
-            self._create_summary_log(main_bot_dir, config.k_iterations, all_results, selected_model)
-        
-        return best_result, best_bot_dir
+            # Create summary log in main bot directory
+            if main_bot_dir:
+                self._create_summary_log(main_bot_dir, config.k_iterations, all_results, selected_model)
+            
+            return best_result, best_bot_dir
+        finally:
+            self.processor.docker_service.release_port(port)
+            self.processor.docker_service.cleanup_containers_by_port(port)
     
     def _process_single_iteration(self, iteration: int, total_iterations: int, 
                                  selected_model: Dict[str, Any], current_prompt: str,
                                  config: ProcessingConfig, main_bot_dir: Optional[str],
-                                 previous_code: Optional[str], previous_requirements: Optional[str]) -> IterationResult:
+                                 previous_code: Optional[str], previous_requirements: Optional[str],
+                                 port: Optional[int] = None) -> IterationResult:
         """Process a single iteration"""
         
         print(f"🚀 Processing prompt with {selected_model['id']}...")
@@ -611,7 +618,7 @@ class IterativeGenerator:
                     )
                 
                 self._save_and_test_code(
-                    iteration, selected_model, python_code, text_content, main_bot_dir
+                    iteration, selected_model, python_code, text_content, main_bot_dir, port=port
                 )
 
                 error_log_content = ""
@@ -674,7 +681,8 @@ class IterativeGenerator:
             )
     
     def _save_and_test_code(self, iteration: int, selected_model: Dict[str, Any], 
-                           python_code: str, text_content: str, main_bot_dir: Optional[str]) -> Optional[str]:
+                           python_code: str, text_content: str, main_bot_dir: Optional[str],
+                           port: Optional[int] = None) -> Optional[str]:
         """Save code and test it"""
         
         print(f"🔧 Saving code for iteration {iteration}")
@@ -716,7 +724,7 @@ class IterativeGenerator:
             # Test the generated code
             if self.processor.docker_service:
                 test_success, test_error = self.processor.test_generated_code(
-                    bot_dir, f"{selected_model['id']}_iter_{iteration}", iteration
+                    bot_dir, f"{selected_model['id']}_iter_{iteration}", iteration, port=port
                 )
                 
                 if test_success:
@@ -1030,6 +1038,63 @@ class PromptProcessorApp:
         self.processor = OpenRouterPromptProcessor(docker_service=self.docker_service)
         self.iterative_generator = IterativeGenerator(self.processor)
     
+    def select_models(self, models: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Select multiple models from the list"""
+        print("\nEnter model numbers (comma-separated for multiple, e.g., 1,3,5) or 0 to exit:")
+        selection = input().strip()
+        
+        if selection == '0':
+            return []
+        
+        try:
+            indices = [int(s.strip()) for s in selection.split(',') if s.strip()]
+        except ValueError:
+            print("Invalid input. Exiting.")
+            return []
+        
+        selected = []
+        for idx in indices:
+            if 1 <= idx <= len(models):
+                selected.append(models[idx-1])
+            else:
+                print(f"Invalid model number: {idx}")
+        
+        if not selected:
+            print("No valid models selected. Exiting.")
+            return []
+        
+        return selected
+    
+    def _process_model(self, selected_model: Dict[str, Any], prompt: str, config: ProcessingConfig) -> None:
+        """Process a single model in a thread-safe manner with dedicated instances"""
+        docker_service = DockerService()
+        processor = OpenRouterPromptProcessor(docker_service=docker_service)
+        iterative_generator = IterativeGenerator(processor)
+        
+        model_id = selected_model['id']
+        print(f"\n🚀 Starting processing for model: {model_id}")
+        
+        try:
+            if config.k_iterations == 1:
+                print(f"Running single generation for {model_id}...")
+                result = processor.process_prompt(
+                    model_id=selected_model['id'],
+                    prompt=prompt,
+                    temperature=config.temperature,
+                    max_tokens=config.max_tokens
+                )
+                processor.save_result_to_log(result, selected_model['id'], prompt)
+                print(f"✅ Completed single generation for {model_id}")
+            else:
+                print(f"Running iterative generation for {model_id} with {config.k_iterations} iterations...")
+                iterative_generator.run_iterations(
+                    selected_model, prompt, config
+                )
+                print(f"✅ Completed iterative generation for {model_id}")
+        except Exception as e:
+            print(f"❌ Error in processing {model_id}: {e}")
+            raise
+    
     def run(self) -> None:
         """Main application entry point"""
         print("🤖 OpenRouter Prompt Processor")
@@ -1046,8 +1111,8 @@ class PromptProcessorApp:
             
             # Display models and get selection
             self.processor.display_models(models)
-            selected_model = self.processor.select_model(models)
-            if not selected_model:
+            selected_models = self.select_models(models)
+            if not selected_models:
                 print("👋 Goodbye!")
                 return
             
@@ -1063,11 +1128,28 @@ class PromptProcessorApp:
             # Get processing parameters
             config = self._get_processing_config()
             
-            # Choose between single or iterative generation
-            if config.k_iterations == 1:
-                self._run_single_generation(selected_model, prompt, config)
+            if len(selected_models) == 1:
+                selected_model = selected_models[0]
+                # Choose between single or iterative generation
+                if config.k_iterations == 1:
+                    self._run_single_generation(selected_model, prompt, config)
+                else:
+                    self._run_iterative_generation(selected_model, prompt, config)
             else:
-                self._run_iterative_generation(selected_model, prompt, config)
+                # Parallel processing for multiple models
+                with ThreadPoolExecutor(max_workers=len(selected_models)) as executor:
+                    futures = {}
+                    for model in selected_models:
+                        future = executor.submit(self._process_model, model, prompt, config)
+                        futures[future] = model['id']
+                    
+                    for future in as_completed(futures):
+                        model_id = futures[future]
+                        try:
+                            future.result()
+                            print(f"✅ Completed processing for {model_id}")
+                        except Exception as e:
+                            print(f"❌ Error in {model_id}: {e}")
             
             print("\n🎉 Processing complete!")
             
