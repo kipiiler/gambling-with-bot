@@ -164,7 +164,9 @@ Performance Analysis:
                         error_lines_with_context = FeedbackAnalyzer._extract_error_lines_with_context(error_content)
                         if error_lines_with_context:
                             feedback_data['error_lines_with_context'] = error_lines_with_context
-                        
+                        else:
+                            feedback_data['error_lines_with_context'] = None
+                            feedback_data['errors'] = None
                         # Extract validation errors specifically
                         if "Code validation failed" in error_content:
                             lines = error_content.split('\n')
@@ -202,7 +204,7 @@ Performance Analysis:
         
         for i, line in enumerate(lines):
             # Look for lines that contain error indicators
-            if any(keyword in line.lower() for keyword in ['error', 'exception', 'failed', 'timeout', 'invalid', 'syntax']):
+            if any(keyword in line.lower() and "detected" not in line.lower() for keyword in ['error', 'exception', 'failed', 'timeout', 'invalid', 'syntax']):
                 # Get the error line and 10 lines after it
                 error_section = [line]  # Start with the error line
                 

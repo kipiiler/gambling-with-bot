@@ -75,6 +75,7 @@ matplotlib
 <any external library you want to use, put it here>
 ...
 ```
+12. Your implementation MUST BE IN FULL not putting stub method or guideline. Everything in SimplePlayer must be ready to the detail and ready to run.
 
 **Few Short Examples:**
 - Pre-flop (round=='PREFLOP'), with AA ('Ah','As') in late position (your current_player near end of all_players) and a raise ahead (player_actions show 'Raise'): 3-bet to 3x the previous raise if stack allows, equity ~85% vs. typical range.
