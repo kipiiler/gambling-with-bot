@@ -11,10 +11,8 @@ You are an expert poker AI developer creating the ultimate bot for Husky Hold'em
 - Bots must handle incomplete information, bluffing, multi-way pots, randomized table positions, and diverse strategies; results measured as delta money against opponents like the House Bot or others.
 - Tournament phases: Development (test vs. House Bot), Tournament (group rounds with buckets, sum scores across buckets), Showdown (top 6 play 6 games each).
 - Technical Limits: 30 seconds max per move (timeout causes automatic fold); 100MB max memory usage; any error/exception causes automatic fold; bots must be error-free and production-ready.
-- Local Testing: Use pokerden-engine repo to simulate; run server with python main.py; clients with python main.py; for simulation mode (chips persist): server with --sim --sim-rounds=100, clients with -s True -sr 100; logs in /output and game_result.log.
-- Submission: Upload player.py and requirements.txt (pure Python dependencies only); up to 5 versions during development, mark one as final by deadline.
 
-**RoundStateClient Full Definition (from round_state.py):**
+**RoundStateClient Full Definition:**
 ```python
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -53,7 +51,7 @@ class RoundStateClient:
         )
 ```
 
-**PokerAction and PokerRound Enums (from poker_action.py):**
+**PokerAction and PokerRound Enums:**
 ```python
 from enum import Enum
 
@@ -71,6 +69,50 @@ class PokerRound(Enum):
     RIVER = 3
 ```
 - Return actions from get_action as a tuple: (PokerAction, amount), where amount=0 for FOLD/CHECK/CALL, amount>0 for RAISE (between min_raise and max_raise), and for ALL_IN, amount is ignored but set to remaining_chips.
+
+**Bot abstract class:**
+```python
+from abc import ABC, abstractmethod
+from typing import List, Tuple
+
+from type.round_state import RoundStateClient
+from type.poker_action import PokerAction
+
+class Bot(ABC):
+    def __init__(self) -> None:
+        """ Initializes the player. """
+        self.id = None
+        pass
+
+    def set_id(self, player_id: int) -> None:
+        """ Sets the player ID. """
+        self.id = player_id
+
+    @abstractmethod
+    def on_start(self, starting_chips: int, player_hands: List[str], blind_amount: int, big_blind_player_id: int, small_blind_player_id: int, all_players: List[int]) -> None:
+        """ Called when the game starts. """
+        pass
+
+    @abstractmethod
+    def on_round_start(self, round_state: RoundStateClient, remaining_chips: int) -> None:
+        """ Called at the start of each round. """
+        pass
+
+    @abstractmethod
+    def get_action(self, round_state: RoundStateClient, remaining_chips: int) -> Tuple[PokerAction, int]:
+        """ Called when it is the player's turn to act. """
+        pass
+
+    @abstractmethod
+    def on_end_round(self, round_state: RoundStateClient, remaining_chips: int) -> None:
+        """ Called at the end of each round. """
+        pass
+
+    @abstractmethod
+    def on_end_game(self, round_state: RoundStateClient, player_score: float, all_scores: dict, active_players_hands: dict) -> None:
+        """ Called at the end of the game. """
+        pass
+```
 
 **SimplePlayer Full Template (from player.py, including all print statements; do not remove them or any methods):**
 ```python
@@ -103,11 +145,10 @@ class SimplePlayer(Bot):
 ```
 
 **Additional Details from README.md:**
-- Project structure: Implement bot logic only in SimplePlayer within player.py; use type/ for definitions (poker_action.py, round_state.py); include requirements.txt for dependencies.
-- Getting Started: Clone repo, setup venv, pip install -r requirements.txt, run python main.py for local testing (needs pokerden-engine for simulation).
+- Project structure: Implement bot logic only in SimplePlayer within player.py; the above definition for type PokerAction, RoundStateClient, etc...; include requirements.txt for dependencies.
 - Implement Your Bot: Modify logic inside functions; extend as needed but keep all predefined methods; use RoundStateClient for game state; return moves using PokerAction enums; logs to standard output and game_result.log.
 - Dev Tips: Use PokerAction.RAISE, CALL, CHECK, FOLD; supports Docker for containerized runs.
-- From main.py: Supports simulation mode for multiple games (chips persist); args for host, port, log-file, result file, simulation, rounds, local, debug; clears result file; logs to console and file.
+- When using PokerAction.CALL, the amount parameter must match the current amount needed to call (difference between highest bet and your current bet)
 
 Implement the full SimplePlayer class by extending the template with advanced strategies: calculate hand equity (e.g., Monte Carlo simulation if efficient within 30s/100MB), use position (derive from all_players and current_player), bluff based on board texture and opponent actions/bets, model opponents from player_actions, player_bets, player_money across rounds/games (track history in instance variables). Handle side pots, all-ins, low stacks, blind increases, multi-way pots, and persistent chips in simulations. Ensure error-free (no exceptions), efficient (quick parsing/calculations), and valid returns (e.g., amount for RAISE >= min_raise, <= max_raise; adjust for current_bet and player_bets[self.id]).
 
@@ -116,3 +157,17 @@ Implement the full SimplePlayer class by extending the template with advanced st
 - Post-river (round=='RIVER'), with top pair and pot-committed opponent (high player_bets): Value bet 2/3 pot if no strong action shown, else call if pot odds favorable.
 
 Your response must consist ONLY of two files: the complete player.py (as a Python code block) implementing the bot with all template elements preserved plus your improvements, and requirements.txt (as a text block) listing any dependencies (pure Python only, e.g., numpy if needed for calculations). Do not include any other text, explanations, or outputs.
+If the requirements is empty return empty content for requirements.txt in that text block. If you want to use any external library, you must put it in that text block
+
+Example response:
+```python
+<Your python code>
+```
+
+```text
+deuce
+numpy
+matplotlib
+<any external library you want to use, put it here>
+...
+```

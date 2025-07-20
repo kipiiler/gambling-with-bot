@@ -290,7 +290,8 @@ class OpenRouterPromptProcessor:
             tar_stream = self.create_tar_stream(player_code, requirements_content)
             
             # Generate a unique test ID
-            test_id = f"test_{model_id.replace('/', '_').replace('-', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_iter{iteration}"
+            sanitized_model_id = model_id.replace("/", "_").replace("-", "_").replace(":", "_").replace("\\", "_").replace("*", "_").replace("?", "_").replace("\"", "_").replace("<", "_").replace(">", "_").replace("|", "_")
+            test_id = f"test_{sanitized_model_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_iter{iteration}"
             
             # Start game server
             port = self.docker_service.generate_random_port()
@@ -447,10 +448,13 @@ class OpenRouterPromptProcessor:
                 if "error" in logs.lower() or "exception" in logs.lower():
                     errors.append(f"Container logs contain errors:\n{logs}")
                 
-                # Get poker client log for detailed error information
-                poker_client_log = self.docker_service.get_poker_client_log(test_client_container)
-                if "error" in poker_client_log.lower() or "exception" in poker_client_log.lower():
-                    errors.append(f"Poker client log contains errors:\n{poker_client_log}")
+                # Always get poker client log for detailed information (not just when it contains errors)
+                try:
+                    poker_client_log = self.docker_service.get_poker_client_log(test_client_container)
+                    if poker_client_log.strip():  # Only add if not empty
+                        errors.append(f"Poker client log:\n{poker_client_log}")
+                except Exception as e:
+                    errors.append(f"Error reading poker client log: {str(e)}")
                 
                 # Check for any error files
                 exit_code, output = self.docker_service._get_container(test_client_container).exec_run("find /app -name '*.log' -exec grep -l -i error {} \\;")
@@ -601,6 +605,25 @@ class OpenRouterPromptProcessor:
                     f.write(f"Test Client Logs:\n{container_logs}\n\n")
                 except Exception as e:
                     f.write(f"Failed to get container logs: {str(e)}\n")
+                
+                # Only include poker client logs if they contain errors
+                f.write("\nPOKER CLIENT LOGS:\n")
+                f.write("-" * 20 + "\n")
+                try:
+                    poker_client_log = self.docker_service.get_poker_client_log(test_client_container)
+                    if poker_client_log:
+                        # Check if poker client logs contain actual errors
+                        poker_log_lower = poker_client_log.lower()
+                        if any(error_keyword in poker_log_lower for error_keyword in ['error', 'exception', 'failed', 'timeout', 'invalid', 'syntax']):
+                            f.write(f"Poker Client Log:\n{poker_client_log}\n\n")
+                            print("🎯 Poker client logs contain errors - including in error log")
+                        else:
+                            f.write("Poker Client Log: No errors detected in poker client logs\n\n")
+                            print("📝 Poker client logs contain no errors - writing summary only")
+                    else:
+                        f.write("Poker Client Log: No poker client logs available\n\n")
+                except Exception as e:
+                    f.write(f"Failed to get poker client logs: {str(e)}\n")
             
             return len(errors) == 0, "Game test completed"
             
@@ -634,7 +657,7 @@ class OpenRouterPromptProcessor:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 
                 # Clean model name for directory
-                model_name = model_id.replace("/", "_").replace("-", "_")
+                model_name = model_id.replace("/", "_").replace("-", "_").replace(":", "_").replace("\\", "_").replace("*", "_").replace("?", "_").replace("\"", "_").replace("<", "_").replace(">", "_").replace("|", "_")
                 
                 # Create directory name
                 dir_name = f"{model_name}_{timestamp}"
