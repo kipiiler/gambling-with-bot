@@ -176,7 +176,7 @@ class DockerService:
             container.exec_run("chmod 755 /app/output")
 
             if sim:
-                exec_command = f"python main.py --port={port} --sim --players={num_bot + 1} --log-file=/app/output/game.log"
+                exec_command = f"python main.py --port={port} --sim --players={num_bot + 1} --log-file=/app/output/game.log --sim-rounds={settings.DEFAULT_SIM_ROUNDS}"
             else:
                 # Execute the command inside the container
                 exec_command = f"python main.py --port={port} --log-file=/app/output/game.log"
@@ -224,7 +224,7 @@ class DockerService:
 
             # Execute the command inside the container
             if sim:
-                exec_command = f"python main.py --host={host} --port={server_port} -s True"
+                exec_command = f"python main.py --host={host} --port={server_port} -s True -sr {settings.DEFAULT_SIM_ROUNDS}"
             else:
                 exec_command = f"python main.py --host={host} --port={server_port}"
             user_container.exec_run(exec_command, detach=True)

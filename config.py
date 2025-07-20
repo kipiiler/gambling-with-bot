@@ -20,6 +20,7 @@ class Settings:
     NUM_PLAYERS_PER_GAME: int = 6
 
     GAME_RUN_TIMEOUT: int = 180  # seconds
+    DEFAULT_SIM_ROUNDS = 10
 
 # Configuration settings for the poker bot training system
 
