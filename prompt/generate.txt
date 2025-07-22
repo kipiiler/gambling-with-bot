@@ -69,7 +69,6 @@ Example response:
 ```
 
 ```text
-deuces
 numpy
 matplotlib
 <any external library you want to use, put it here>
