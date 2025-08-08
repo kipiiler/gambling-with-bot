@@ -74,7 +74,8 @@ class QuickPromptRunner:
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": False
+            "stream": False,
+            "include_reasoning": True
         }
         
         response = requests.post(

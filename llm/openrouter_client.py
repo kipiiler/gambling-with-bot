@@ -57,6 +57,7 @@ class OpenRouterClient:
         temperature: float = 1.0,
         max_tokens: Optional[int] = None,
         stream: bool = False,
+        include_reasoning: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -78,6 +79,7 @@ class OpenRouterClient:
             "messages": messages,
             "temperature": temperature,
             "stream": stream,
+            "include_reasoning": include_reasoning,
             **kwargs
         }
         

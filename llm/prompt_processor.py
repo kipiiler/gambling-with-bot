@@ -110,17 +110,7 @@ class OpenRouterPromptProcessor:
                 return None
     
     def process_prompt(self, model_id: str, prompt: str, **kwargs) -> Dict[str, Any]:
-        """
-        Process a prompt through the selected model
-        
-        Args:
-            model_id: The model to use
-            prompt: The prompt text to process
-            **kwargs: Additional parameters for the API call
-            
-        Returns:
-            API response as dictionary
-        """
+        """Process a prompt through the selected model with better error handling"""
         payload = {
             "model": model_id,
             "messages": [
@@ -128,29 +118,45 @@ class OpenRouterPromptProcessor:
             ],
             "temperature": kwargs.get("temperature", 1.0),
             "max_tokens": kwargs.get("max_tokens", 9000),
-            "stream": False
+            "stream": False,
+            "include_reasoning": True
         }
-        
-        # Add optional parameters
-        for key in ["top_p", "frequency_penalty", "presence_penalty"]:
-            if key in kwargs:
-                payload[key] = kwargs[key]
         
         try:
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=self.headers,
-                json=payload
+                json=payload,
+                timeout=300  # Add 5 minute timeout
             )
             
             if response.status_code != 200:
                 raise Exception(f"API request failed: {response.status_code} - {response.text}")
             
-            return response.json()
+            # Debug: Print response info before parsing
+            print(f"📊 Response status: {response.status_code}")
+            print(f"📊 Response headers: {dict(response.headers)}")
+            print(f"📊 Response size: {len(response.text)} characters")
             
+            # Try to parse JSON with better error handling
+            try:
+                return response.json()
+            except json.JSONDecodeError as json_error:
+                print(f"❌ JSON parsing error: {json_error}")
+                print(f"📄 Raw response (first 1000 chars): {response.text[:1000]}")
+                print(f"📄 Raw response (last 1000 chars): {response.text[-1000:]}")
+                
+                # Save the raw response for debugging
+                with open(f"debug_response_{model_id.replace('/', '_')}.txt", 'w') as f:
+                    f.write(response.text)
+                
+                raise Exception(f"Failed to parse JSON response: {json_error}")
+                
+        except requests.exceptions.Timeout:
+            raise Exception("Request timed out - model may be taking too long to respond")
         except Exception as e:
             raise Exception(f"Error processing prompt: {e}")
-    
+
     def read_prompt_from_file(self, file_path: str = "prompt/generate.txt") -> str:
         """Read prompt from the specified file"""
         try:
