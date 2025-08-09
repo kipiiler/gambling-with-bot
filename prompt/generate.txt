@@ -1,17 +1,16 @@
-You are an expert poker AI developer working at a big quant firm and currently creating the ultimate bot for Husky Hold'em, the biggest No-Limit Texas Hold'em poker bot competition to win yourself biggest promotion you have in life.
+You are tasked with submitting a poker bot to a No-Limit Texas Hold'em poker bot competition: Husky Hold'em.
 
 **Detailed Game Rules**
 - No-Limit Texas Hold'em with 2-10 players (often 6-handed tables); bots compete in heads-up or multi-player matches hosted by a central game server.
-- Players start with $1,000 chips at the simulation start; simulations run for n games (more than 10 per run); blinds rotate and increase every n games (e.g., after certain rounds); big/small blinds are posted pre-flop.
-- Goal: Maximize delta money (ending chips minus starting chips); if a player runs out of chips, they default to fold and may lose more on blinds; no rebuys.
+- Players start with $10,000 chips at the simulation start; simulations run for n games (more than 10 per run); blinds rotate and increase every n games (e.g., after certain rounds); big/small blinds are posted pre-flop.
+- Goal: Maximize delta money (ending chips minus starting chips); if a player runs out of chips, they are eliminated from that table; no rebuys.
 - Each hand has 4 betting rounds: Pre-flop (after hole cards and blinds), Flop (3 community cards), Turn (1 community card), River (1 community card).
 - Actions: Fold, Check, Call, Raise (any amount up to stack, no limit), All-in.
 - Hand rankings: Royal flush > Straight flush > Four of a kind > Full house > Flush > Straight > Three of a kind > Two pair > One pair > High card.
 - Showdown: If multiple players remain after river betting, best 5-card hand (using any combination of 2 hole cards + 5 community cards) wins the pot; side pots form for all-ins with eligible players.
-- Bots must handle incomplete information, bluffing, multi-way pots, randomized table positions, and diverse strategies; results measured as delta money against opponents like the House Bot or others.
-- Technical Limits: 30 seconds max per move (timeout causes automatic fold); 100MB max memory usage; any error/exception causes automatic fold; bots must be error-free and production-ready.
+- Technical Limits: 30 seconds max per move (timeout causes automatic fold); 100MB max memory usage; any error/exception causes automatic fold; all bots are given the same compute limits.
 
-Your task: Implement the ultimate SimplePlayer bot in player.py by subclassing Bot as in the template below and follow the above game rules.
+Your task: Implement winning bot in player.py by subclassing Bot as in the template below and follow the above game rules.
 
 Bot Design and Competition Rules:
 
@@ -47,10 +46,7 @@ class SimplePlayer(Bot):
 ```
 2. DO NOT rename or remove any predefined methods (on_start, on_round_start, get_action, on_end_round, on_end_game), and do not change their signatures.
 3. You may add helper functions and instance variables for strategy or tracking.
-4. Your bot should use advanced poker AI strategies:
-    - Use GTO principles, hand equity calculation (Monte Carlo if within 30s/100MB), opponent modeling from player_actions/bets, and exploit chip persistence across games for long-term profit.
-    - Handle incomplete information, bluffing, multi-way pots, variable positions, blind increases, all-in, and side pots.
-    - Use position (derive from all_players and current_player), bluff based on board texture and opponent actions/bets, model opponents from player_actions, player_bets, player_money across rounds/games (track history in instance variables). Handle side pots, all-ins, low stacks, blind increases, multi-way pots, and persistent chips in simulations. Ensure error-free (no exceptions), efficient (quick parsing/calculations)
+4. Your bot should be able to abide by no limit texas hold'em rules and handle side pots, all-ins, blind increases, multi-way pots, and be error-free (no exceptions).
 5. For each action, always return valid actions:
     - For RAISE: the amount raise combine with your current bet must be larger than the the current raise.
     - For CALL: You don't need to specify the amount you call, it default to match exactly the amount needed to call (current_bet - your bet).
@@ -75,11 +71,10 @@ matplotlib
 ...
 ```
 12. Your implementation MUST BE IN FULL not putting stub method or guideline. Everything in SimplePlayer must be ready to the detail and ready to run.
-13. When you do division, make sure to make it prone to error divise by zero by adding some small delta.
-
-**Few Short Examples:**
-- Pre-flop (round=='PREFLOP'), with AA ('Ah','As') in late position (your current_player near end of all_players) and a raise ahead (player_actions show 'Raise'): 3-bet to 3x the previous raise if stack allows, equity ~85% vs. typical range.
-- Post-river (round=='RIVER'), with top pair and pot-committed opponent (high player_bets): Value bet 2/3 pot if no strong action shown, else call if pot odds favorable.
+13. When you do division, make sure to make it prone to error divide by zero by adding some small delta.
+14. The pool of submitted bots, including your bot, will be organized into 6-handed poker tables where every possible combination of 6 bots forms a separate table. Each table will play exactly 1,000 hands, with chip stacks carrying over between hands within the same table. 
+15. At the end of each table, delta money is calculated for each bot using the formula: final chip count minus 10,000 (initial chip amount). Your bot's total tournament score is determined by summing its delta money across all tables it participates in. The bot with the highest cumulative delta money across all tables wins the tournament.
+16. Your bot will undergo iterative testing across 5 rounds, where each round involves playing 10 hands of heads-up poker against a house bot. After each round, you will receive either the complete game log showing performance results or any compilation/simulation errors that occurred while attempting to run your bot. Use this feedback to refine your implementation in subsequent iterations.
 
 **References**
 
