@@ -1,21 +1,5 @@
 """
 OpenRouter API Chat Completion Example
-
-This example demonstrates how to use the OpenRouter API for chat completion
-with different model selections. OpenRouter provides access to multiple
-AI models from various providers through a single API.
-
-Available models include:
-- anthropic/claude-3.5-sonnet
-- anthropic/claude-3-opus
-- openai/gpt-4o
-- openai/gpt-4o-mini
-- meta-llama/llama-3.1-70b-instruct
-- google/gemini-pro
-- mistralai/mistral-7b-instruct
-- and many more...
-
-To get your API key, visit: https://openrouter.ai/keys
 """
 
 import os
