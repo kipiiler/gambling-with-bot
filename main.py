@@ -13,11 +13,17 @@ from utils.automated_processor import AutomatedPromptProcessor
 
 TARGET_MODELS = [
     "anthropic/claude-opus-4.1",
-    "qwen/qwen3-coder",
-    "x-ai/grok-4",
-    "google/gemini-2.5-pro",
-    "anthropic/claude-sonnet-4",
-    "z-ai/glm-4.5",
+    # "qwen/qwen3-235b-a22b-2507",
+    # "x-ai/grok-4",
+    # "google/gemini-2.5-pro",
+    # "anthropic/claude-sonnet-4",
+    # "z-ai/glm-4.5",
+    # "qwen/qwen3-coder",
+    # "google/gemini-2.5-flash",
+    # "moonshotai/kimi-k2",
+    # "deepseek/deepseek-r1-0528",
+    # "openai/gpt-5",
+    # "openai/o3-pro"
 ]
 
 def main():

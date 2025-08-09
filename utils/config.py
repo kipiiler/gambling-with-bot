@@ -23,10 +23,10 @@ class Settings:
     DEFAULT_MAX_TOKENS = 30000
     
     # Training Settings - Fixed bug: should be 5 iterations
-    DEFAULT_NUM_ITERATIONS = 5
+    DEFAULT_NUM_ITERATIONS = 1
     
     # Token Management Settings
-    MAX_CONTEXT_LENGTH = 400000  # Fixed: Updated for newer models
+    MAX_CONTEXT_LENGTH = 300000
     ESTIMATED_GROWTH_PER_ITERATION = 8000
     SAFETY_BUFFER_FACTOR = 1.2
     MIN_MAX_TOKENS = 10000

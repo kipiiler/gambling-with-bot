@@ -3,46 +3,81 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Any
 from .data_models import ProcessingConfig
 from .iterative_generator import IterativeGenerator
-from llm.prompt_processor import OpenRouterPromptProcessor
 
 class AutomatedPromptProcessor:
-    """Automated prompt processor for predefined models"""
+    """Automated prompt processor with OpenAI Direct API routing"""
     
-    
+    OPENAI_DIRECT_MODELS = ["openai/gpt-5", "openai/o3-pro"]
     def __init__(self, TARGET_MODELS):
-        # Import here to avoid circular imports
         from utils.docker_service import DockerService
+        from llm.prompt_processor import OpenRouterPromptProcessor
+        from llm.openai_client import OpenAIDirectProcessor
+        
         self.docker_service = DockerService()
-        self.processor = OpenRouterPromptProcessor(docker_service=self.docker_service)
-        self.iterative_generator = IterativeGenerator(self.processor)
         self.TARGET_MODELS = TARGET_MODELS
+        
+        # Initialize both processors
+        self.openrouter_processor = OpenRouterPromptProcessor(docker_service=self.docker_service)
+        self.openai_processor = OpenAIDirectProcessor(docker_service=self.docker_service)
+
+
+    
+    def _get_processor_for_model(self, model_id: str):
+        """Get the appropriate processor for a given model"""
+        if model_id in self.OPENAI_DIRECT_MODELS:
+            print(f"🤖 Using OpenAI Direct API for: {model_id}")
+            return self.openai_processor
+        else:
+            print(f"🌐 Using OpenRouter for: {model_id}")
+            return self.openrouter_processor
     
     def run(self) -> None:
         """Main automated processing entry point"""
-        print("🤖 Automated OpenRouter Prompt Processor")
+        print("🤖 Automated OpenRouter + OpenAI Direct Prompt Processor")
         print("=" * 60)
-        print(f"📋 Processing {len(self.TARGET_MODELS)} predefined models with 5 iterations each")
+        print(f"📋 Processing {len(self.TARGET_MODELS)} models with smart API routing")
+        print(f"🌐 OpenRouter models: {len([m for m in self.TARGET_MODELS if m not in self.OPENAI_DIRECT_MODELS])}")
+        print(f"🤖 OpenAI Direct models: {len(self.OPENAI_DIRECT_MODELS)}")
         print("=" * 60)
         
         try:
-            # Get available models
-            print("📡 Fetching available models...")
-            available_models = self.processor.get_available_models()
-            if not available_models:
-                print("❌ No models available. Check your API key and internet connection.")
+            # Get available models from both sources
+            print("📡 Fetching available models from OpenRouter...")
+            openrouter_models = self.openrouter_processor.get_available_models()
+            
+            print("📡 Getting OpenAI Direct API models...")
+            openai_models = self.openai_processor.get_available_models()
+            
+            # Combine all available models
+            all_available_models = openrouter_models + openai_models
+            
+            if not all_available_models:
+                print("❌ No models available. Check your API keys and internet connection.")
                 return
             
             # Filter to only target models that are available
-            available_model_ids = {model.get("id", "") for model in available_models}
+            available_model_ids = {model.get("id", "") for model in all_available_models}
             selected_models = []
             
             for target_model in self.TARGET_MODELS:
                 if target_model in available_model_ids:
-                    for model in available_models:
+                    for model in all_available_models:
                         if model.get("id") == target_model:
                             selected_models.append(model)
-                            print(f"✅ Found target model: {target_model}")
+                            if target_model in self.OPENAI_DIRECT_MODELS:
+                                print(f"✅ Found OpenAI Direct model: {target_model}")
+                            else:
+                                print(f"✅ Found OpenRouter model: {target_model}")
                             break
+                elif target_model in self.OPENAI_DIRECT_MODELS:
+                    # Create synthetic entry for OpenAI Direct models
+                    synthetic_model = {
+                        "id": target_model,
+                        "provider": {"id": "openai"},
+                        "context_length": 200000
+                    }
+                    selected_models.append(synthetic_model)
+                    print(f"✅ Added OpenAI Direct model: {target_model}")
                 else:
                     print(f"⚠️ Target model not available: {target_model}")
             
@@ -55,7 +90,7 @@ class AutomatedPromptProcessor:
             # Read prompt
             print("\n📖 Reading prompt from generate.txt...")
             try:
-                prompt = self.processor.read_prompt_from_file("prompt/generate.txt")
+                prompt = self.openrouter_processor.read_prompt_from_file("prompt/generate.txt")
                 print(f"✅ Prompt loaded ({len(prompt)} characters)")
             except Exception as e:
                 print(f"❌ Error reading prompt: {e}")
@@ -64,18 +99,18 @@ class AutomatedPromptProcessor:
             # Create processing configuration
             config = ProcessingConfig(
                 temperature=1.0,
-                max_tokens=30000,  # Will be dynamically calculated
+                max_tokens=30000,
                 k_iterations=5,
                 prompt_file="prompt/generate.txt"
             )
             
-            # Fixed bug: Better parallel processing with error handling
+            # Process models in parallel
             print(f"\n🚀 Starting parallel processing of {len(selected_models)} models...")
             
             completed_models = []
             failed_models = []
             
-            with ThreadPoolExecutor(max_workers=min(len(selected_models), 3)) as executor:  # Limit to 3 parallel
+            with ThreadPoolExecutor(max_workers=min(len(selected_models), 4)) as executor:
                 futures = {}
                 for model in selected_models:
                     future = executor.submit(self._process_model_safely, model, prompt, config)
@@ -96,7 +131,7 @@ class AutomatedPromptProcessor:
                         failed_models.append(model_id)
             
             # Summary
-            print(f"\n🎉 Automated processing complete!")
+            print(f"\n🎉 Multi-API processing complete!")
             print(f"✅ Successfully processed: {len(completed_models)}/{len(selected_models)} models")
             if failed_models:
                 print(f"❌ Failed models: {', '.join(failed_models)}")
@@ -108,15 +143,25 @@ class AutomatedPromptProcessor:
             print(f"\n❌ Error: {e}")
     
     def _process_model_safely(self, selected_model: Dict[str, Any], prompt: str, config: ProcessingConfig) -> bool:
-        """Process a single model in a thread-safe manner with dedicated instances"""
+        """Process a single model with the appropriate processor"""
         # Create dedicated instances for thread safety
         from utils.docker_service import DockerService
-        docker_service = DockerService()
-        processor = OpenRouterPromptProcessor(docker_service=docker_service)
-        iterative_generator = IterativeGenerator(processor)
+        from llm.prompt_processor import OpenRouterPromptProcessor
+        from llm.openai_client import OpenAIDirectProcessor
         
+        docker_service = DockerService()
         model_id = selected_model['id']
-        print(f"\n🚀 Starting processing for model: {model_id}")
+        
+        # Choose the right processor for this model
+        if model_id in self.OPENAI_DIRECT_MODELS:
+            processor = OpenAIDirectProcessor(docker_service=docker_service)
+            print(f"\n🤖 Starting OpenAI Direct processing for: {model_id}")
+        else:
+            processor = OpenRouterPromptProcessor(docker_service=docker_service)
+            print(f"\n🌐 Starting OpenRouter processing for: {model_id}")
+        
+        # Create iterative generator with the right processor
+        iterative_generator = IterativeGenerator(processor)
         
         try:
             best_result, best_bot_dir = iterative_generator.run_iterations(
