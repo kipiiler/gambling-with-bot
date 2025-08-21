@@ -94,6 +94,13 @@ class IterativeGenerator:
         os.makedirs(dir_path, exist_ok=True)
         print(f"📁 Created new directory: {dir_path}")
         
+        # Log to bot_directories.txt
+        try:
+            with open("bot_directories.txt", 'a', encoding='utf-8') as f:
+                f.write(f"{selected_model['id']} : {dir_path}\n")
+        except Exception:
+            pass  # Silent fail to not interrupt processing
+        
         return dir_path
     
     def _process_single_iteration(self, iteration: int, selected_model: Dict[str, Any],

@@ -743,6 +743,13 @@ class OpenRouterPromptProcessor:
                 dir_path = os.path.join("bot", dir_name)
                 os.makedirs(dir_path, exist_ok=True)
                 print(f"📁 Created new directory: {dir_path}")
+                
+                # Log to bot_directories.txt
+                try:
+                    with open("bot_directories.txt", 'a', encoding='utf-8') as f:
+                        f.write(f"{model_id} : {dir_path}\n")
+                except Exception:
+                    pass  # Silent fail to not interrupt processing
 
             # Save player.py
             player_path = os.path.join(dir_path, "player.py")

@@ -32,3 +32,6 @@ output.log
 bot/*/*
 bot/
 output_*.log
+creds.json
+bot_directories.txt
+huskybench_submissions.log

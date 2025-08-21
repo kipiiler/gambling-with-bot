@@ -13,17 +13,17 @@ from utils.automated_processor import AutomatedPromptProcessor
 
 TARGET_MODELS = [
     "anthropic/claude-opus-4.1",
-    # "qwen/qwen3-235b-a22b-2507",
-    # "x-ai/grok-4",
-    # "google/gemini-2.5-pro",
-    # "anthropic/claude-sonnet-4",
-    # "z-ai/glm-4.5",
-    # "qwen/qwen3-coder",
-    # "google/gemini-2.5-flash",
-    # "moonshotai/kimi-k2",
-    # "deepseek/deepseek-r1-0528",
-    # "openai/gpt-5",
-    # "openai/o3-pro"
+    "qwen/qwen3-235b-a22b-2507",
+    "x-ai/grok-4",
+    "google/gemini-2.5-pro",
+    "anthropic/claude-sonnet-4",
+    "z-ai/glm-4.5",
+    "qwen/qwen3-coder",
+    "google/gemini-2.5-flash",
+    "moonshotai/kimi-k2",
+    "deepseek/deepseek-r1-0528",
+    "openai/gpt-5",
+    "openai/o3-pro"
 ]
 
 def main():
@@ -34,6 +34,13 @@ def main():
     print(f"🔄 Iterations per Model: 5")
     print(f"📊 Total Runs: {len(TARGET_MODELS) * 5}")
     print("=" * 50)
+    
+    # Initialize bot_directories.txt file
+    with open("bot_directories.txt", 'w', encoding='utf-8') as f:
+        f.write("# Model ID to Directory Path Mapping\n")
+        f.write("# Generated automatically by main.py\n")
+        f.write("# Format: model_id : dir_path\n\n")
+    print("📝 Initialized bot_directories.txt")
     
     try:
         # Initialize and run the automated processor
