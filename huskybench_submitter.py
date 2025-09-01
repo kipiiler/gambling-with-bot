@@ -218,7 +218,7 @@ def submit_bot(submitter: HuskyBenchSubmitter, model_id: str, username: str, pas
     
     # Login
     if not submitter.login(username, password):
-        return False
+         return False
     
     try:
         # First, list existing submissions and check for final ones
