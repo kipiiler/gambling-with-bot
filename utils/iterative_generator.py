@@ -33,6 +33,7 @@ class IterativeGenerator:
         port = self.processor.docker_service.generate_random_port()
         
         try:
+            best_iteration = None
             for iteration in range(1, config.k_iterations + 1):
                 print(f"\n{'='*60}")
                 print(f"🔄 ITERATION {iteration}/{config.k_iterations}")
@@ -55,6 +56,8 @@ class IterativeGenerator:
                 if iteration_result.success:
                     best_result = iteration_result.result
                     best_bot_dir = iteration_result.bot_dir
+                    best_iteration = iteration
+                    print(f"🏆 New best solution found in iteration {iteration}!")
                 
                 # Create feedback prompt for next iteration
                 if iteration < config.k_iterations:
@@ -67,6 +70,13 @@ class IterativeGenerator:
                         current_prompt = original_prompt
                 
                 print(f"✅ Iteration {iteration} completed. Success: {iteration_result.success}")
+            
+            # Copy the best working solution to main directory
+            if best_iteration is not None:
+                self._copy_best_solution_to_main_dir(main_bot_dir, best_iteration)
+                print(f"🎯 Copied best solution from iteration {best_iteration} to main directory")
+            else:
+                print("⚠️ No successful iterations found - main directory will not contain working solution")
             
             # Display summary
             self._display_iteration_summary(config.k_iterations, main_bot_dir, all_results)
@@ -205,23 +215,10 @@ class IterativeGenerator:
     
     def _save_and_test_code(self, iteration: int, selected_model: Dict[str, Any],
                            python_code: str, text_content: str, main_bot_dir: str, port: int) -> None:
-        """Save code to main directory and iteration-specific directory, then test"""
+        """Save code to iteration-specific directory only, then test"""
         print(f"🔧 Saving code for iteration {iteration}")
         
-        # Save to main directory
-        player_path = os.path.join(main_bot_dir, "player.py")
-        requirements_path = os.path.join(main_bot_dir, "requirements.txt")
-        
-        with open(player_path, 'w', encoding='utf-8') as f:
-            f.write(python_code)
-        
-        with open(requirements_path, 'w', encoding='utf-8') as f:
-            f.write(text_content)
-        
-        print(f"✅ Python code saved to: {player_path}")
-        print(f"✅ Requirements saved to: {requirements_path}")
-        
-        # Save iteration-specific code
+        # Save iteration-specific code only (not to main directory during processing)
         iteration_dir = os.path.join(main_bot_dir, "verified", f"{iteration}_iteration")
         os.makedirs(iteration_dir, exist_ok=True)
         
@@ -238,17 +235,40 @@ class IterativeGenerator:
         
         # Test the generated code
         if self.processor.docker_service:
-            test_success, test_error = self.processor.test_generated_code(
-                main_bot_dir, f"{selected_model['id']}_iter_{iteration}", iteration, port=port
-            )
+            # Temporarily copy files to main directory for testing compatibility
+            temp_player_path = os.path.join(main_bot_dir, "player.py")
+            temp_requirements_path = os.path.join(main_bot_dir, "requirements.txt")
+            
+            # Copy files for testing
+            with open(iteration_player_path, 'r', encoding='utf-8') as f:
+                player_content = f.read()
+            with open(temp_player_path, 'w', encoding='utf-8') as f:
+                f.write(player_content)
+                
+            with open(iteration_requirements_path, 'r', encoding='utf-8') as f:
+                requirements_content = f.read()
+            with open(temp_requirements_path, 'w', encoding='utf-8') as f:
+                f.write(requirements_content)
+            
+            try:
+                # Test using the main directory (with temporarily copied files)
+                test_success, test_error = self.processor.test_generated_code(
+                    main_bot_dir, f"{selected_model['id']}_iter_{iteration}", iteration, port=port
+                )
 
-            if test_success:
-                print("✅ Game test completed successfully!")
-            elif test_error and "Game test completed" in test_error:
-                # This is actually success - the game completed properly
-                print("✅ Game test completed successfully!")
-            else:
-                print(f"⚠️ Game test failed: {test_error}")
+                if test_success:
+                    print("✅ Game test completed successfully!")
+                elif test_error and "Game test completed" in test_error:
+                    # This is actually success - the game completed properly
+                    print("✅ Game test completed successfully!")
+                else:
+                    print(f"⚠️ Game test failed: {test_error}")
+            finally:
+                # Clean up temporary files from main directory
+                if os.path.exists(temp_player_path):
+                    os.remove(temp_player_path)
+                if os.path.exists(temp_requirements_path):
+                    os.remove(temp_requirements_path)
         else:
             print("⚠️ Docker service not available - skipping game test")
       
@@ -322,3 +342,34 @@ class IterativeGenerator:
             
         except Exception as e:
             print(f"⚠️ Error creating summary log: {e}")
+
+    def _copy_best_solution_to_main_dir(self, main_bot_dir: str, best_iteration: int) -> None:
+        """Copy the best working solution to the main directory"""
+        try:
+            # Source paths (from the best iteration)
+            best_iteration_dir = os.path.join(main_bot_dir, "verified", f"{best_iteration}_iteration")
+            source_player_path = os.path.join(best_iteration_dir, "player.py")
+            source_requirements_path = os.path.join(best_iteration_dir, "requirements.txt")
+            
+            # Destination paths (main directory)
+            dest_player_path = os.path.join(main_bot_dir, "player.py")
+            dest_requirements_path = os.path.join(main_bot_dir, "requirements.txt")
+            
+            # Copy player.py
+            if os.path.exists(source_player_path):
+                with open(source_player_path, 'r', encoding='utf-8') as f:
+                    player_content = f.read()
+                with open(dest_player_path, 'w', encoding='utf-8') as f:
+                    f.write(player_content)
+                print(f"✅ Copied best player.py from iteration {best_iteration}")
+            
+            # Copy requirements.txt
+            if os.path.exists(source_requirements_path):
+                with open(source_requirements_path, 'r', encoding='utf-8') as f:
+                    requirements_content = f.read()
+                with open(dest_requirements_path, 'w', encoding='utf-8') as f:
+                    f.write(requirements_content)
+                print(f"✅ Copied best requirements.txt from iteration {best_iteration}")
+                
+        except Exception as e:
+            print(f"⚠️ Error copying best solution to main directory: {e}")
