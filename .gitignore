@@ -35,3 +35,7 @@ output_*.log
 creds.json
 bot_directories.txt
 huskybench_submissions.log
+hermes-allrun-logs.zip
+action_analysis.py
+individual_charts_analysis.py
+charts

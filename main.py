@@ -27,7 +27,7 @@ from utils.automated_processor import AutomatedPromptProcessor
 # ]
 
 TARGET_MODELS = [
-    "deepseek/deepseek-r1-0528",
+    "deepseek/deepseek-r1-0528"
 ]
 
 def main():
